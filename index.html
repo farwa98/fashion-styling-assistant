@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>ClosetMatch — Personal Style & Outfit Matcher</title>
+  <!-- Supabase JS Client -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-container">
+    <!-- Top Header -->
+    <header class="top-header">
+      <div class="header-content">
+        <span class="brand-logo">ClosetMatch</span>
+        <span id="active-style-badge" class="style-badge">Minimalist</span>
+      </div>
+    </header>
+
+    <!-- Main View Area -->
+    <main class="main-content">
+      <!-- TAB 1: STYLE MATCHER (Check Online Item) -->
+      <section id="tab-matcher" class="tab-panel active">
+        <div class="section-intro">
+          <h2>Style an Online Find</h2>
+          <p>Enter an item you're thinking of buying to see how it pairs with your closet.</p>
+        </div>
+
+        <form id="matcher-form" class="card form-card">
+          <div class="form-group">
+            <label for="buy-name">Item Name</label>
+            <input type="text" id="buy-name" placeholder="e.g., Oversized Camel Blazer" required />
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="buy-category">Category</label>
+              <select id="buy-category" required>
+                <option value="Top">Top</option>
+                <option value="Bottom">Bottom</option>
+                <option value="Outerwear">Outerwear</option>
+                <option value="Shoes">Shoes</option>
+                <option value="Accessory">Accessory</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="buy-color">Color</label>
+              <select id="buy-color" required>
+                <option value="Black">Black</option>
+                <option value="White">White</option>
+                <option value="Gray">Gray</option>
+                <option value="Beige">Beige / Camel</option>
+                <option value="Navy">Navy</option>
+                <option value="Blue">Denim / Blue</option>
+                <option value="Green">Olive / Green</option>
+                <option value="Red">Burgundy / Red</option>
+                <option value="Brown">Brown</option>
+              </select>
+            </div>
+          </div>
+
+          <button type="submit" class="btn btn-primary btn-full">Match With My Closet</button>
+        </form>
+
+        <!-- Match Results Container -->
+        <div id="match-results" class="results-container hidden">
+          <div class="result-header">
+            <h3>Styling Verdict</h3>
+            <span id="match-score" class="score-pill">92% Match</span>
+          </div>
+          <p id="styling-advice" class="advice-text"></p>
+          
+          <h4>Suggested Outfit Combinations</h4>
+          <div id="outfit-cards" class="outfit-list"></div>
+        </div>
+      </section>
+
+      <!-- TAB 2: MY CLOSET -->
+      <section id="tab-closet" class="tab-panel">
+        <div class="section-header-flex">
+          <div>
+            <h2>My Closet</h2>
+            <p id="closet-count">0 items saved</p>
+          </div>
+          <button id="toggle-add-btn" class="btn btn-secondary">+ Add Item</button>
+        </div>
+
+        <!-- Add Item Drawer/Form -->
+        <form id="add-closet-form" class="card form-card hidden">
+          <h3>Add to Virtual Closet</h3>
+          <div class="form-group">
+            <label for="item-name">Clothing Item</label>
+            <input type="text" id="item-name" placeholder="e.g., White Crewneck Tee" required />
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label for="item-category">Category</label>
+              <select id="item-category" required>
+                <option value="Top">Top</option>
+                <option value="Bottom">Bottom</option>
+                <option value="Outerwear">Outerwear</option>
+                <option value="Shoes">Shoes</option>
+                <option value="Accessory">Accessory</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="item-color">Color</label>
+              <select id="item-color" required>
+                <option value="Black">Black</option>
+                <option value="White">White</option>
+                <option value="Gray">Gray</option>
+                <option value="Beige">Beige / Camel</option>
+                <option value="Navy">Navy</option>
+                <option value="Blue">Denim / Blue</option>
+                <option value="Green">Olive / Green</option>
+                <option value="Red">Burgundy / Red</option>
+                <option value="Brown">Brown</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-actions">
+            <button type="button" id="cancel-add-btn" class="btn btn-ghost">Cancel</button>
+            <button type="submit" class="btn btn-primary">Save Item</button>
+          </div>
+        </form>
+
+        <!-- Category Filter Pills -->
+        <div class="filter-bar" id="closet-filters">
+          <button class="filter-chip active" data-filter="All">All</button>
+          <button class="filter-chip" data-filter="Top">Tops</button>
+          <button class="filter-chip" data-filter="Bottom">Bottoms</button>
+          <button class="filter-chip" data-filter="Outerwear">Outerwear</button>
+          <button class="filter-chip" data-filter="Shoes">Shoes</button>
+        </div>
+
+        <!-- Closet Grid -->
+        <div id="closet-grid" class="closet-grid"></div>
+      </section>
+
+      <!-- TAB 3: STYLE PROFILE -->
+      <section id="tab-profile" class="tab-panel">
+        <div class="section-intro">
+          <h2>Your Style Persona</h2>
+          <p>Select your preferred aesthetic so our styling engine tailors outfit formulas to your taste.</p>
+        </div>
+
+        <div id="persona-list" class="persona-grid">
+          <div class="persona-card active" data-style="Minimalist">
+            <h4>Minimalist</h4>
+            <p>Clean lines, neutral tones, effortless monochrome & timeless basics.</p>
+          </div>
+          <div class="persona-card" data-style="Streetwear">
+            <h4>Streetwear</h4>
+            <p>Relaxed silhouettes, layered outerwear, statement sneakers & bold contrast.</p>
+          </div>
+          <div class="persona-card" data-style="Smart Casual">
+            <h4>Smart Casual</h4>
+            <p>Polished everyday wear mixing tailored blazers, knits, and dark denim.</p>
+          </div>
+          <div class="persona-card" data-style="Classic Chic">
+            <h4>Classic Chic</h4>
+            <p>Structured pieces, balanced proportions, and refined color pairings.</p>
+          </div>
+        </div>
+
+        <div class="card status-card">
+          <h4>Database Status</h4>
+          <p id="db-status-text" class="status-indicator">Checking connection...</p>
+        </div>
+      </section>
+    </main>
+
+    <!-- Bottom Mobile Navigation -->
+    <nav class="bottom-nav">
+      <button class="nav-item active" data-target="tab-matcher">
+        <span class="nav-icon">✨</span>
+        <span class="nav-label">Style Check</span>
+      </button>
+      <button class="nav-item" data-target="tab-closet">
+        <span class="nav-icon">👕</span>
+        <span class="nav-label">My Closet</span>
+      </button>
+      <button class="nav-item" data-target="tab-profile">
+        <span class="nav-icon">🎨</span>
+        <span class="nav-label">My Style</span>
+      </button>
+    </nav>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
