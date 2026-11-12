@@ -1,8 +1,8 @@
 // ==========================================
 // 1. SUPABASE CONFIGURATION
 // ==========================================
-const SUPABASE_URL = 'YOUR_SUPABASE_PROJECT_URL';
-const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY';
+const SUPABASE_URL = 'https://ymdbqfkedpmdaiywhztt.supabase.co';
+const SUPABASE_ANON_KEY = ' sb_publishable_00aQjnrnFCHsuqbki8kOLg_jKy4Nk2o';
 
 const isSupabaseConfigured =
   SUPABASE_URL !== 'YOUR_SUPABASE_PROJECT_URL' &&
