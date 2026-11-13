@@ -122,8 +122,6 @@ async function removeClosetItem(id) {
 }
 
 // ==========================================
-// 4. STYLING & OUTFIT ENGINE
-// ==========================================
 // ==========================================
 // 4. STYLING & OUTFIT ENGINE
 // ==========================================
@@ -141,13 +139,15 @@ function generateOutfitMatches(targetItem) {
   const outerwear = matchingItems.filter((i) => i.category === 'Outerwear');
 
   const outfits = [];
-  const maxLooks = Math.max(1, Math.min(3, Math.max(tops.length, 1), Math.max(bottoms.length, 1)));
+  
+  // Determine how many unique outfits we can actually make without repeating
+  const totalCombinations = Math.max(tops.length, 1) * Math.max(bottoms.length, 1);
+  const maxLooks = Math.min(3, totalCombinations);
 
   // Build unique outfit formulas
   for (let i = 0; i < maxLooks; i++) {
     const pieces = [`🆕 ${targetItem.name} (${targetItem.color})`];
 
-    // Pick unique items using index rotation
     const topItem = tops.length > 0 ? tops[i % tops.length] : null;
     const bottomItem = bottoms.length > 0 ? bottoms[i % bottoms.length] : null;
     const shoeItem = shoes.length > 0 ? shoes[i % shoes.length] : null;
@@ -156,11 +156,11 @@ function generateOutfitMatches(targetItem) {
     if (targetItem.category === 'Top') {
       if (bottomItem) pieces.push(`👖 ${bottomItem.name}`);
       if (shoeItem) pieces.push(`👟 ${shoeItem.name}`);
-      if (outerItem && i % 2 === 1) pieces.push(`🧥 ${outerItem.name}`);
+      if (outerItem && i === 0) pieces.push(`🧥 ${outerItem.name}`);
     } else if (targetItem.category === 'Bottom') {
       if (topItem) pieces.push(`👕 ${topItem.name}`);
       if (shoeItem) pieces.push(`👟 ${shoeItem.name}`);
-      if (outerItem && i % 2 === 1) pieces.push(`🧥 ${outerItem.name}`);
+      if (outerItem && i === 0) pieces.push(`🧥 ${outerItem.name}`);
     } else if (targetItem.category === 'Outerwear') {
       if (topItem) pieces.push(`👕 ${topItem.name}`);
       if (bottomItem) pieces.push(`👖 ${bottomItem.name}`);
