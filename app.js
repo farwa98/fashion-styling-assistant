@@ -4,10 +4,10 @@
 const SUPABASE_URL = 'https://ymdbqfkedpmdaiywhztt.supabase.co';
 const SUPABASE_ANON_KEY = ' sb_publishable_00aQjnrnFCHsuqbki8kOLg_jKy4Nk2o';
 
-const isSupabaseConfigured =
-  SUPABASE_URL !== 'YOUR_SUPABASE_PROJECT_URL' &&
-  SUPABASE_ANON_KEY !== 'YOUR_SUPABASE_ANON_KEY' &&
-  window.supabase;
+//const isSupabaseConfigured =
+  //SUPABASE_URL !== 'YOUR_SUPABASE_PROJECT_URL' &&
+  //SUPABASE_ANON_KEY !== 'YOUR_SUPABASE_ANON_KEY' &&
+  //window.supabase;
 
 const supabaseClient = isSupabaseConfigured
   ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
