@@ -14,7 +14,10 @@
     <header class="top-header">
       <div class="header-content">
         <span class="brand-logo">ClosetMatch</span>
-        <span id="active-style-badge" class="style-badge">Minimalist</span>
+        <div class="header-actions">
+          <span id="active-style-badge" class="style-badge">Minimalist</span>
+          <button id="open-auth-btn" class="btn-login-header">Log In</button>
+        </div>
       </div>
     </header>
 
@@ -191,16 +194,7 @@
       </button>
     </nav>
   </div>
-  <!-- Top Header -->
-    <header class="top-header">
-      <div class="header-content">
-        <span class="brand-logo">ClosetMatch</span>
-        <div class="header-actions">
-          <span id="active-style-badge" class="style-badge">Minimalist</span>
-          <button id="open-auth-btn" class="btn-login-header">Log In</button>
-        </div>
-      </div>
-    </header>
+
   <!-- Login / Sign Up Modal -->
   <div id="auth-modal" class="modal-overlay hidden">
     <div class="modal-card">
@@ -232,6 +226,7 @@
       </div>
     </div>
   </div>
+
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="app.js"></script>
 </body>
