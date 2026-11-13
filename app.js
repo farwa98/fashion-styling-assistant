@@ -2,11 +2,11 @@
 // 1. SUPABASE CONFIGURATION
 // ==========================================
 const SUPABASE_URL = 'https://ymdbqfkedpmdaiywhztt.supabase.co';
-const SUPABASE_ANON_KEY = 'sb_publishable_00aQjnrnFCHsuqbki8kOLg_jKy4Nk2o';
+const SUPABASE_ANON_KEY = 'sb_publishable_00aQjnrnFCHsuqbki8kOLg_jKy4Nk2o'.trim();
 
-// Safely initialize Supabase client using the global library
-const supabaseClient = (typeof supabase !== 'undefined')
-  ? supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+// Safely initialize the Supabase client from the CDN
+const supabaseClient = (window.supabase && typeof window.supabase.createClient === 'function')
+  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
   : null;
 
 // ==========================================
