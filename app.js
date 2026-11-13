@@ -4,13 +4,9 @@
 const SUPABASE_URL = 'https://ymdbqfkedpmdaiywhztt.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_00aQjnrnFCHsuqbki8kOLg_jKy4Nk2o';
 
-const isSupabaseConfigured =
-  SUPABASE_URL !== 'Yhttps://ymdbqfkedpmdaiywhztt.supabase.co' &&
-  SUPABASE_ANON_KEY !== 'sb_publishable_00aQjnrnFCHsuqbki8kOLg_jKy4Nk2o' &&
-  window.supabase;
-
-const supabaseClient = isSupabaseConfigured
-  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+// Safely initialize Supabase client using the global library
+const supabaseClient = (typeof supabase !== 'undefined')
+  ? supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
   : null;
 
 // ==========================================
