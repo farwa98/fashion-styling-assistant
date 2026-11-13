@@ -231,6 +231,107 @@ function renderCloset() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  // ==========================================
+  // SUPABASE AUTHENTICATION (LOGIN / SIGN UP)
+  // ==========================================
+  const authModal = document.getElementById('auth-modal');
+  const openAuthBtn = document.getElementById('open-auth-btn');
+  const closeAuthBtn = document.getElementById('close-auth-btn');
+  const authForm = document.getElementById('auth-form');
+  const toggleAuthModeBtn = document.getElementById('toggle-auth-mode');
+  const authErrorMsg = document.getElementById('auth-error-msg');
+  let isSignUpMode = false;
+
+  function updateAuthUI(user) {
+    if (user) {
+      openAuthBtn.textContent = 'Log Out';
+      openAuthBtn.classList.add('logged-in');
+      document.getElementById('db-status-text').textContent = `Signed in as ${user.email}`;
+    } else {
+      openAuthBtn.textContent = 'Log In';
+      openAuthBtn.classList.remove('logged-in');
+    }
+  }
+
+  // Check active session on page load
+  if (supabaseClient) {
+    supabaseClient.auth.getSession().then(({ data: { session } }) => {
+      updateAuthUI(session?.user || null);
+    });
+
+    supabaseClient.auth.onAuthStateChange((_event, session) => {
+      updateAuthUI(session?.user || null);
+      fetchClosetItems();
+    });
+  }
+
+  // Open modal or log out
+  openAuthBtn.addEventListener('click', async () => {
+    if (!supabaseClient) {
+      alert('Add your Supabase URL and Anon Key in app.js first.');
+      return;
+    }
+
+    const { data: { session } } = await supabaseClient.auth.getSession();
+    if (session?.user) {
+      await supabaseClient.auth.signOut();
+      return;
+    }
+
+    authErrorMsg.classList.add('hidden');
+    authModal.classList.remove('hidden');
+  });
+
+  closeAuthBtn.addEventListener('click', () => {
+    authModal.classList.add('hidden');
+  });
+
+  // Switch between Log In and Sign Up
+  toggleAuthModeBtn.addEventListener('click', () => {
+    isSignUpMode = !isSignUpMode;
+    authErrorMsg.classList.add('hidden');
+    document.getElementById('auth-modal-title').textContent = isSignUpMode ? 'Create Account' : 'Welcome Back';
+    document.getElementById('auth-modal-subtitle').textContent = isSignUpMode
+      ? 'Sign up to save your personal closet in the cloud.'
+      : 'Log in to access your saved virtual closet anywhere.';
+    document.getElementById('auth-submit-btn').textContent = isSignUpMode ? 'Sign Up' : 'Log In';
+    document.getElementById('auth-switch-text').textContent = isSignUpMode
+      ? 'Already have an account?'
+      : "Don't have an account?";
+    toggleAuthModeBtn.textContent = isSignUpMode ? 'Log In' : 'Sign Up';
+  });
+
+  // Handle Login / Sign Up Form Submit
+  authForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!supabaseClient) return;
+
+    const email = document.getElementById('auth-email').value.trim();
+    const password = document.getElementById('auth-password').value;
+    const submitBtn = document.getElementById('auth-submit-btn');
+
+    authErrorMsg.classList.add('hidden');
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Please wait...';
+
+    const { error } = isSignUpMode
+      ? await supabaseClient.auth.signUp({ email, password })
+      : await supabaseClient.auth.signInWithPassword({ email, password });
+
+    submitBtn.disabled = false;
+    submitBtn.textContent = isSignUpMode ? 'Sign Up' : 'Log In';
+
+    if (error) {
+      authErrorMsg.textContent = error.message;
+      authErrorMsg.classList.remove('hidden');
+    } else {
+      authForm.reset();
+      authModal.classList.add('hidden');
+      if (isSignUpMode) {
+        alert('Account created! You are now signed in.');
+      }
+    }
+  });
   // Initialize Style Persona UI
   document.getElementById('active-style-badge').textContent = selectedStyle;
   document.querySelectorAll('.persona-card').forEach((card) => {
