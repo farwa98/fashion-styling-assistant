@@ -5,8 +5,8 @@ const SUPABASE_URL = 'https://ymdbqfkedpmdaiywhztt.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_00aQjnrnFCHsuqbki8kOLg_jKy4Nk2o';
 
 const isSupabaseConfigured =
-  SUPABASE_URL !== 'YOUR_SUPABASE_PROJECT_URL' &&
-  SUPABASE_ANON_KEY !== 'YOUR_SUPABASE_ANON_KEY' &&
+  SUPABASE_URL !== 'Yhttps://ymdbqfkedpmdaiywhztt.supabase.co' &&
+  SUPABASE_ANON_KEY !== 'sb_publishable_00aQjnrnFCHsuqbki8kOLg_jKy4Nk2o' &&
   window.supabase;
 
 const supabaseClient = isSupabaseConfigured
