@@ -124,6 +124,9 @@ async function removeClosetItem(id) {
 // ==========================================
 // 4. STYLING & OUTFIT ENGINE
 // ==========================================
+// ==========================================
+// 4. STYLING & OUTFIT ENGINE
+// ==========================================
 function generateOutfitMatches(targetItem) {
   const compatibleColors = COLOR_PAIRINGS[targetItem.color] || ['Black', 'White', 'Blue'];
 
@@ -138,37 +141,42 @@ function generateOutfitMatches(targetItem) {
   const outerwear = matchingItems.filter((i) => i.category === 'Outerwear');
 
   const outfits = [];
+  const maxLooks = Math.max(1, Math.min(3, Math.max(tops.length, 1), Math.max(bottoms.length, 1)));
 
-  // Build up to 3 complete outfit formulas based on what the user is buying
-  for (let i = 0; i < 3; i++) {
+  // Build unique outfit formulas
+  for (let i = 0; i < maxLooks; i++) {
     const pieces = [`🆕 ${targetItem.name} (${targetItem.color})`];
 
+    // Pick unique items using index rotation
+    const topItem = tops.length > 0 ? tops[i % tops.length] : null;
+    const bottomItem = bottoms.length > 0 ? bottoms[i % bottoms.length] : null;
+    const shoeItem = shoes.length > 0 ? shoes[i % shoes.length] : null;
+    const outerItem = outerwear.length > 0 ? outerwear[i % outerwear.length] : null;
+
     if (targetItem.category === 'Top') {
-      if (bottoms[i % bottoms.length]) pieces.push(`👖 ${bottoms[i % bottoms.length].name}`);
-      if (shoes[i % shoes.length]) pieces.push(`👟 ${shoes[i % shoes.length].name}`);
-      if (outerwear[0] && i === 1) pieces.push(`🧥 ${outerwear[0].name}`);
+      if (bottomItem) pieces.push(`👖 ${bottomItem.name}`);
+      if (shoeItem) pieces.push(`👟 ${shoeItem.name}`);
+      if (outerItem && i % 2 === 1) pieces.push(`🧥 ${outerItem.name}`);
     } else if (targetItem.category === 'Bottom') {
-      if (tops[i % tops.length]) pieces.push(`👕 ${tops[i % tops.length].name}`);
-      if (shoes[i % shoes.length]) pieces.push(`👟 ${shoes[i % shoes.length].name}`);
-      if (outerwear[0] && i === 1) pieces.push(`🧥 ${outerwear[0].name}`);
+      if (topItem) pieces.push(`👕 ${topItem.name}`);
+      if (shoeItem) pieces.push(`👟 ${shoeItem.name}`);
+      if (outerItem && i % 2 === 1) pieces.push(`🧥 ${outerItem.name}`);
     } else if (targetItem.category === 'Outerwear') {
-      if (tops[i % tops.length]) pieces.push(`👕 ${tops[i % tops.length].name}`);
-      if (bottoms[i % bottoms.length]) pieces.push(`👖 ${bottoms[i % bottoms.length].name}`);
-      if (shoes[i % shoes.length]) pieces.push(`👟 ${shoes[i % shoes.length].name}`);
+      if (topItem) pieces.push(`👕 ${topItem.name}`);
+      if (bottomItem) pieces.push(`👖 ${bottomItem.name}`);
+      if (shoeItem) pieces.push(`👟 ${shoeItem.name}`);
     } else if (targetItem.category === 'Shoes') {
-      if (tops[i % tops.length]) pieces.push(`👕 ${tops[i % tops.length].name}`);
-      if (bottoms[i % bottoms.length]) pieces.push(`👖 ${bottoms[i % bottoms.length].name}`);
+      if (topItem) pieces.push(`👕 ${topItem.name}`);
+      if (bottomItem) pieces.push(`👖 ${bottomItem.name}`);
     } else {
-      if (tops[i % tops.length]) pieces.push(`👕 ${tops[i % tops.length].name}`);
-      if (bottoms[i % bottoms.length]) pieces.push(`👖 ${bottoms[i % bottoms.length].name}`);
+      if (topItem) pieces.push(`👕 ${topItem.name}`);
+      if (bottomItem) pieces.push(`👖 ${bottomItem.name}`);
     }
 
-    if (pieces.length > 1) {
-      outfits.push({
-        label: `Look #${outfits.length + 1} — ${selectedStyle} Vibe`,
-        pieces
-      });
-    }
+    outfits.push({
+      label: `Look #${outfits.length + 1} — ${selectedStyle} Vibe`,
+      pieces
+    });
   }
 
   // Calculate versatility score
