@@ -4,7 +4,6 @@
 const SUPABASE_URL = 'https://ymdbqfkedpmdaiywhztt.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_00aQjnrnFCHsuqbki8kOLg_jKy4Nk2o'.trim();
 
-// Safely initialize Supabase client from CDN
 const supabaseClient =
   window.supabase && typeof window.supabase.createClient === 'function'
     ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
@@ -12,7 +11,9 @@ const supabaseClient =
 
 // App State
 let closetItems = [];
+let activeCategoryFilter = 'All';
 let selectedStyle = localStorage.getItem('user_style_persona') || 'Minimalist';
+let isSignUpMode = false;
 let currentWeather = {
   tempF: null,
   condition: 'mild' // 'cold' (< 60°F), 'mild' (60–75°F), 'warm' (> 75°F)
@@ -44,53 +45,51 @@ const COLOR_PAIRINGS = {
 // 2. WEATHER API INTEGRATION (OPEN-METEO)
 // ==========================================
 async function fetchLocalWeather() {
-  const weatherEl = document.getElementById('weather-status-badge');
+  const weatherBadges = document.querySelectorAll('#weather-status-badge');
 
-  // Default fallback coordinates (New York, NY) if user declines location permission
-  let lat = 40.7128;
-  let lon = -74.0060;
-  let locationLabel = 'NYC';
+  async function loadWeatherForCoords(lat, lon, label) {
+    try {
+      const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m&temperature_unit=fahrenheit`;
+      const response = await fetch(url);
+      const data = await response.json();
 
-  try {
-    if ('geolocation' in navigator) {
-      const pos = await new Promise((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 });
+      if (data && data.current && typeof data.current.temperature_2m === 'number') {
+        const temp = Math.round(data.current.temperature_2m);
+        currentWeather.tempF = temp;
+
+        if (temp < 60) {
+          currentWeather.condition = 'cold';
+        } else if (temp > 75) {
+          currentWeather.condition = 'warm';
+        } else {
+          currentWeather.condition = 'mild';
+        }
+
+        const icon = temp < 60 ? '🧥' : temp > 75 ? '☀️' : '🌤️';
+        weatherBadges.forEach((el) => {
+          el.innerHTML = `<h3>${icon} ${label} Weather: ${temp}°F (${currentWeather.condition.toUpperCase()})</h3>`;
+        });
+      }
+    } catch (error) {
+      console.error('Weather fetch failed:', error);
+      weatherBadges.forEach((el) => {
+        el.innerHTML = '<h3>🌤️ Weather unavailable (standard styling)</h3>';
       });
-      lat = pos.coords.latitude;
-      lon = pos.coords.longitude;
-      locationLabel = 'Local';
     }
-  } catch (err) {
-    console.log('Location permission skipped; using default city weather.');
   }
 
-  try {
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&temperature_unit=fahrenheit`;
-    const response = await fetch(url);
-    const data = await response.json();
+  // 1. Load default NYC weather immediately so it never hangs
+  await loadWeatherForCoords(40.7128, -74.0060, 'NYC');
 
-    if (data && data.current_weather) {
-      const temp = Math.round(data.current_weather.temperature);
-      currentWeather.tempF = temp;
-
-      if (temp < 60) {
-        currentWeather.condition = 'cold';
-      } else if (temp > 75) {
-        currentWeather.condition = 'warm';
-      } else {
-        currentWeather.condition = 'mild';
-      }
-
-      if (weatherEl) {
-        const icon = temp < 60 ? '🧥' : temp > 75 ? '☀️' : '🌤️';
-        weatherEl.textContent = `${icon} ${locationLabel} Weather: ${temp}°F (${currentWeather.condition.toUpperCase()})`;
-      }
-    }
-  } catch (error) {
-    console.error('Weather fetch failed:', error);
-    if (weatherEl) {
-      weatherEl.textContent = '🌤️ Weather unavailable (standard styling)';
-    }
+  // 2. Upgrade to exact user location if granted
+  if ('geolocation' in navigator) {
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        loadWeatherForCoords(pos.coords.latitude, pos.coords.longitude, 'Local');
+      },
+      () => {},
+      { timeout: 5000 }
+    );
   }
 }
 
@@ -197,7 +196,6 @@ async function deleteClosetItem(itemId) {
 function generateOutfitMatches(targetItem) {
   const compatibleColors = COLOR_PAIRINGS[targetItem.color] || ['Black', 'White', 'Blue'];
 
-  // Filter closet items that pair well in color
   const matchingItems = closetItems.filter((item) =>
     compatibleColors.includes(item.color)
   );
@@ -247,6 +245,7 @@ function generateOutfitMatches(targetItem) {
     } else {
       if (topItem) pieces.push(`👕 ${topItem.name}`);
       if (bottomItem) pieces.push(`👖 ${bottomItem.name}`);
+      if (shoeItem) pieces.push(`👟 ${shoeItem.name}`);
     }
 
     outfits.push({
@@ -283,7 +282,7 @@ function generateOutfitMatches(targetItem) {
 }
 
 // ==========================================
-// 5. UI RENDERING & INTERACTIONS
+// 5. UI RENDERING
 // ==========================================
 function renderCloset() {
   const grid = document.getElementById('closet-grid');
@@ -291,11 +290,16 @@ function renderCloset() {
   if (!grid) return;
 
   if (countEl) {
-    countEl.textContent = `${closetItems.length} item${closetItems.length === 1 ? '' : 's'}`;
+    countEl.textContent = `${closetItems.length} item${closetItems.length === 1 ? '' : 's'} saved`;
   }
 
-  if (closetItems.length === 0) {
-    grid.innerHTML = `<p style="color:#777; grid-column: 1 / -1;">Your closet is empty. Add a piece above to start matching!</p>`;
+  const filteredItems =
+    activeCategoryFilter === 'All'
+      ? closetItems
+      : closetItems.filter((item) => item.category === activeCategoryFilter);
+
+  if (filteredItems.length === 0) {
+    grid.innerHTML = `<p style="color:#777; grid-column: 1 / -1;">No items found in this category. Click "+ Add Item" to build your closet!</p>`;
     return;
   }
 
@@ -303,10 +307,11 @@ function renderCloset() {
     Top: '👕',
     Bottom: '👖',
     Outerwear: '🧥',
-    Shoes: '👟'
+    Shoes: '👟',
+    Accessory: '👜'
   };
 
-  grid.innerHTML = closetItems
+  grid.innerHTML = filteredItems
     .map(
       (item) => `
       <div class="closet-card">
@@ -324,26 +329,22 @@ function renderCloset() {
     .join('');
 }
 
-function renderMatchResults(targetItem, result) {
+function renderMatchResults(result) {
   const resultsContainer = document.getElementById('match-results');
+  const scoreEl = document.getElementById('match-score');
+  const adviceEl = document.getElementById('styling-advice');
+  const cardsContainer = document.getElementById('outfit-cards');
+
   if (!resultsContainer) return;
 
-  resultsContainer.style.display = 'block';
-  resultsContainer.innerHTML = `
-    <div class="match-header">
-      <div>
-        <h3>Styling: ${targetItem.name}</h3>
-        <p class="style-advice">${result.advice}</p>
-      </div>
-      <div class="versatility-badge">
-        <span class="score-number">${result.score}%</span>
-        <span class="score-label">Closet Match</span>
-      </div>
-    </div>
-    <div class="outfits-list">
-      ${result.outfits
-        .map(
-          (outfit) => `
+  resultsContainer.classList.remove('hidden');
+  if (scoreEl) scoreEl.textContent = `${result.score}% Match`;
+  if (adviceEl) adviceEl.textContent = result.advice;
+
+  if (cardsContainer) {
+    cardsContainer.innerHTML = result.outfits
+      .map(
+        (outfit) => `
         <div class="outfit-card">
           <h4>${outfit.label}</h4>
           <ul>
@@ -351,74 +352,76 @@ function renderMatchResults(targetItem, result) {
           </ul>
         </div>
       `
-        )
-        .join('')}
-    </div>
-  `;
+      )
+      .join('');
+  }
 }
 
 // ==========================================
 // 6. AUTHENTICATION HANDLERS
 // ==========================================
 async function updateAuthUI() {
-  const authBtn = document.getElementById('auth-btn');
-  const userEmailDisplay = document.getElementById('user-email-display');
+  const authBtn = document.getElementById('open-auth-btn');
   if (!supabaseClient || !authBtn) return;
 
   const { data: { session } } = await supabaseClient.auth.getSession();
-  if (session?.user) {
-    authBtn.textContent = 'Log Out';
-    if (userEmailDisplay) userEmailDisplay.textContent = session.user.email;
+  authBtn.textContent = session?.user ? 'Log Out' : 'Log In';
+}
+
+function setAuthModalMode(signUp) {
+  isSignUpMode = signUp;
+  const titleEl = document.getElementById('auth-modal-title');
+  const subtitleEl = document.getElementById('auth-modal-subtitle');
+  const submitBtn = document.getElementById('auth-submit-btn');
+  const switchText = document.getElementById('auth-switch-text');
+  const switchBtn = document.getElementById('toggle-auth-mode');
+  const errorEl = document.getElementById('auth-error-msg');
+
+  if (errorEl) errorEl.classList.add('hidden');
+
+  if (isSignUpMode) {
+    if (titleEl) titleEl.textContent = 'Create Account';
+    if (subtitleEl) subtitleEl.textContent = 'Sign up to sync your virtual closet to the cloud.';
+    if (submitBtn) submitBtn.textContent = 'Sign Up';
+    if (switchText) switchText.textContent = 'Already have an account?';
+    if (switchBtn) switchBtn.textContent = 'Log In';
   } else {
-    authBtn.textContent = 'Log In';
-    if (userEmailDisplay) userEmailDisplay.textContent = '';
+    if (titleEl) titleEl.textContent = 'Welcome Back';
+    if (subtitleEl) subtitleEl.textContent = 'Log in to access your saved virtual closet anywhere.';
+    if (submitBtn) submitBtn.textContent = 'Log In';
+    if (switchText) switchText.textContent = "Don't have an account?";
+    if (switchBtn) switchBtn.textContent = 'Sign Up';
   }
 }
 
-async function handleAuthAction() {
+async function handleAuthSubmit(email, password) {
+  const errorEl = document.getElementById('auth-error-msg');
+  const modal = document.getElementById('auth-modal');
+
   if (!supabaseClient) {
-    alert('Supabase client failed to initialize. Check your URL and Anon Key in app.js.');
+    if (errorEl) {
+      errorEl.textContent = 'Supabase client failed to initialize.';
+      errorEl.classList.remove('hidden');
+    }
     return;
   }
 
-  const { data: { session } } = await supabaseClient.auth.getSession();
-  if (session?.user) {
-    await supabaseClient.auth.signOut();
-    await updateAuthUI();
-    await fetchClosetItems();
-    return;
-  }
-
-  const authModal = document.getElementById('auth-modal');
-  if (authModal) {
-    authModal.style.display = 'flex';
+  let authResponse;
+  if (isSignUpMode) {
+    authResponse = await supabaseClient.auth.signUp({ email, password });
   } else {
-    const email = prompt('Enter your email to log in or sign up:');
-    const password = prompt('Enter your password (min 6 characters):');
-    if (email && password) {
-      await signInOrSignUp(email, password);
-    }
-  }
-}
-
-async function signInOrSignUp(email, password) {
-  if (!supabaseClient) return;
-
-  let { error } = await supabaseClient.auth.signInWithPassword({ email, password });
-
-  if (error) {
-    const signUpRes = await supabaseClient.auth.signUp({ email, password });
-    if (signUpRes.error) {
-      alert(`Authentication error: ${signUpRes.error.message}`);
-      return;
-    } else {
-      alert('Account created! If email confirmation is enabled, check your inbox.');
-    }
+    authResponse = await supabaseClient.auth.signInWithPassword({ email, password });
   }
 
-  const authModal = document.getElementById('auth-modal');
-  if (authModal) authModal.style.display = 'none';
+  if (authResponse.error) {
+    if (errorEl) {
+      errorEl.textContent = authResponse.error.message;
+      errorEl.classList.remove('hidden');
+    }
+    return;
+  }
 
+  if (modal) modal.classList.add('hidden');
   await updateAuthUI();
   await fetchClosetItems();
 }
@@ -427,10 +430,60 @@ async function signInOrSignUp(email, password) {
 // 7. EVENT LISTENERS & INITIALIZATION
 // ==========================================
 document.addEventListener('DOMContentLoaded', () => {
-  // 1. Add Item Form
-  const addForm = document.getElementById('add-item-form');
-  if (addForm) {
-    addForm.addEventListener('submit', async (e) => {
+  // 1. Bottom Navigation Tabs ("Style Check" / "My Closet" / "My Style")
+  const navButtons = document.querySelectorAll('.bottom-nav .nav-item');
+  const tabPanels = document.querySelectorAll('.tab-panel');
+
+  navButtons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const targetId = btn.dataset.target;
+      if (!targetId) return;
+
+      navButtons.forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+
+      tabPanels.forEach((panel) => {
+        panel.classList.toggle('active', panel.id === targetId);
+      });
+    });
+  });
+
+  // 2. Style Matcher Form (Tab 1)
+  const matcherForm = document.getElementById('matcher-form');
+  if (matcherForm) {
+    matcherForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const name = document.getElementById('buy-name').value.trim();
+      const category = document.getElementById('buy-category').value;
+      const color = document.getElementById('buy-color').value;
+      if (!name) return;
+
+      const targetItem = { name, category, color };
+      const matchResult = generateOutfitMatches(targetItem);
+      renderMatchResults(matchResult);
+    });
+  }
+
+  // 3. My Closet Drawer Toggle & Add Form (Tab 2)
+  const toggleAddBtn = document.getElementById('toggle-add-btn');
+  const cancelAddBtn = document.getElementById('cancel-add-btn');
+  const addClosetForm = document.getElementById('add-closet-form');
+
+  if (toggleAddBtn && addClosetForm) {
+    toggleAddBtn.addEventListener('click', () => {
+      addClosetForm.classList.toggle('hidden');
+    });
+  }
+
+  if (cancelAddBtn && addClosetForm) {
+    cancelAddBtn.addEventListener('click', () => {
+      addClosetForm.classList.add('hidden');
+      addClosetForm.reset();
+    });
+  }
+
+  if (addClosetForm) {
+    addClosetForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       const name = document.getElementById('item-name').value.trim();
       const category = document.getElementById('item-category').value;
@@ -438,67 +491,87 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!name) return;
 
       await createClosetItem({ name, category, color });
-      addForm.reset();
+      addClosetForm.reset();
+      addClosetForm.classList.add('hidden');
     });
   }
 
-  // 2. Test / Match Item Form
-  const testForm = document.getElementById('test-item-form');
-  if (testForm) {
-    testForm.addEventListener('submit', (e) => {
-      e.preventDefault();
-      const name = document.getElementById('test-item-name').value.trim();
-      const category = document.getElementById('test-item-category').value;
-      const color = document.getElementById('test-item-color').value;
-      if (!name) return;
-
-      const targetItem = { name, category, color };
-      const matchResult = generateOutfitMatches(targetItem);
-      renderMatchResults(targetItem, matchResult);
-    });
-  }
-
-  // 3. Style Persona Selector
-  const styleButtons = document.querySelectorAll('.style-pill, [data-style]');
-  styleButtons.forEach((btn) => {
-    if (btn.dataset.style === selectedStyle) {
-      btn.classList.add('active');
-    }
-    btn.addEventListener('click', () => {
-      styleButtons.forEach((b) => b.classList.remove('active'));
-      btn.classList.add('active');
-      selectedStyle = btn.dataset.style;
-      localStorage.setItem('user_style_persona', selectedStyle);
+  // 4. Closet Category Filter Chips (Tab 2)
+  const filterChips = document.querySelectorAll('#closet-filters .filter-chip');
+  filterChips.forEach((chip) => {
+    chip.addEventListener('click', () => {
+      filterChips.forEach((c) => c.classList.remove('active'));
+      chip.classList.add('active');
+      activeCategoryFilter = chip.dataset.filter || 'All';
+      renderCloset();
     });
   });
 
-  // 4. Auth Button & Modal Form
-  const authBtn = document.getElementById('auth-btn');
-  if (authBtn) {
-    authBtn.addEventListener('click', handleAuthAction);
+  // 5. Style Persona Cards (Tab 3)
+  const activeStyleBadge = document.getElementById('active-style-badge');
+  const personaCards = document.querySelectorAll('#persona-list .persona-card');
+
+  if (activeStyleBadge) activeStyleBadge.textContent = selectedStyle;
+
+  personaCards.forEach((card) => {
+    card.classList.toggle('active', card.dataset.style === selectedStyle);
+
+    card.addEventListener('click', () => {
+      personaCards.forEach((c) => c.classList.remove('active'));
+      card.classList.add('active');
+      selectedStyle = card.dataset.style;
+      localStorage.setItem('user_style_persona', selectedStyle);
+      if (activeStyleBadge) activeStyleBadge.textContent = selectedStyle;
+    });
+  });
+
+  // 6. Auth Modal & Login/Sign Up Handlers
+  const openAuthBtn = document.getElementById('open-auth-btn');
+  const closeAuthBtn = document.getElementById('close-auth-btn');
+  const authModal = document.getElementById('auth-modal');
+  const toggleAuthModeBtn = document.getElementById('toggle-auth-mode');
+  const authForm = document.getElementById('auth-form');
+
+  if (openAuthBtn) {
+    openAuthBtn.addEventListener('click', async () => {
+      if (supabaseClient) {
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        if (session?.user) {
+          await supabaseClient.auth.signOut();
+          await updateAuthUI();
+          await fetchClosetItems();
+          return;
+        }
+      }
+      setAuthModalMode(false);
+      if (authModal) authModal.classList.remove('hidden');
+    });
   }
 
-  const authForm = document.getElementById('auth-form');
+  if (closeAuthBtn && authModal) {
+    closeAuthBtn.addEventListener('click', () => {
+      authModal.classList.add('hidden');
+    });
+  }
+
+  if (toggleAuthModeBtn) {
+    toggleAuthModeBtn.addEventListener('click', () => {
+      setAuthModalMode(!isSignUpMode);
+    });
+  }
+
   if (authForm) {
     authForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       const email = document.getElementById('auth-email').value.trim();
       const password = document.getElementById('auth-password').value;
       if (email && password) {
-        await signInOrSignUp(email, password);
+        await handleAuthSubmit(email, password);
       }
     });
   }
 
-  const closeModalBtn = document.getElementById('close-auth-modal');
-  if (closeModalBtn) {
-    closeModalBtn.addEventListener('click', () => {
-      const authModal = document.getElementById('auth-modal');
-      if (authModal) authModal.style.display = 'none';
-    });
-  }
-
-  // 5. Listen for Supabase Auth State Changes
+  // 7. Supabase Auth Listener & Initial Data Load
   if (supabaseClient) {
     supabaseClient.auth.onAuthStateChange(async () => {
       await updateAuthUI();
@@ -506,7 +579,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // 6. Initialize App Data & Weather
   updateAuthUI();
   fetchClosetItems();
   fetchLocalWeather();
