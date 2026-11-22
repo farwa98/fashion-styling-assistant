@@ -173,55 +173,73 @@ function generateOutfitMatches(targetItem) {
   const allOuterwear = closetItems.filter((i) => norm(i.category) === 'outerwear');
 
   // Prefer color-matched items, but fall back to any item in that category
-  const topsPool = allTops.filter((i) => compatibleColors.includes(i.color)).length > 0
-    ? allTops.filter((i) => compatibleColors.includes(i.color))
-    : allTops;
-
-  const bottomsPool = allBottoms.filter((i) => compatibleColors.includes(i.color)).length > 0
-    ? allBottoms.filter((i) => compatibleColors.includes(i.color))
-    : allBottoms;
-
-  const shoesPool = allShoes.filter((i) => compatibleColors.includes(i.color)).length > 0
-    ? allShoes.filter((i) => compatibleColors.includes(i.color))
-    : allShoes;
-
-  const outerwearPool = allOuterwear.filter((i) => compatibleColors.includes(i.color)).length > 0
-    ? allOuterwear.filter((i) => compatibleColors.includes(i.color))
-    : allOuterwear;
+  const getPool = (items, fallbackLabel) => {
+    if (items.length === 0) return [{ name: fallbackLabel, color: '', isFallback: true }];
+    const matched = items.filter((i) => compatibleColors.includes(i.color));
+    return matched.length > 0 ? matched : items;
+  };
 
   const targetCat = norm(targetItem.category);
-  const outfits = [];
-  const maxLooks = Math.min(3, Math.max(1, topsPool.length, bottomsPool.length, shoesPool.length));
+  const topsPool = targetCat === 'top' ? [null] : getPool(allTops, 'Suggested: Crisp White Tee');
+  const bottomsPool = targetCat === 'bottom' ? [null] : getPool(allBottoms, 'Suggested: Straight-Leg Jeans');
+  const shoesPool = targetCat === 'shoes' ? [null] : getPool(allShoes, 'Suggested: Clean White Sneakers');
+  const outerwearPool = targetCat === 'outerwear' ? [null] : getPool(allOuterwear, null);
 
   const isCold = currentWeather.condition === 'cold';
   const isWarm = currentWeather.condition === 'warm';
 
-  for (let i = 0; i < maxLooks; i++) {
+  // Build all unique combinations (Top x Bottom x Shoes)
+  const allCombinations = [];
+  for (let t = 0; t < topsPool.length; t++) {
+    for (let b = 0; b < bottomsPool.length; b++) {
+      for (let s = 0; s < shoesPool.length; s++) {
+        allCombinations.push({
+          top: topsPool[t],
+          bottom: bottomsPool[b],
+          shoe: shoesPool[s],
+          outer: outerwearPool[0] && !outerwearPool[0].isFallback
+            ? outerwearPool[(t + b + s) % outerwearPool.length]
+            : null
+        });
+      }
+    }
+  }
+
+  // Pick up to 3 distinct looks
+  const uniqueLooks = allCombinations.slice(0, 3);
+  const outfits = uniqueLooks.map((combo, index) => {
     const pieces = [`🆕 ${targetItem.name} (${targetItem.color})`];
 
-    const topItem = topsPool.length > 0 ? topsPool[i % topsPool.length] : null;
-    const bottomItem = bottomsPool.length > 0 ? bottomsPool[i % bottomsPool.length] : null;
-    const shoeItem = shoesPool.length > 0 ? shoesPool[i % shoesPool.length] : null;
-    const outerItem = outerwearPool.length > 0 ? outerwearPool[i % outerwearPool.length] : null;
+    if (combo.top) {
+      pieces.push(
+        combo.top.isFallback
+          ? `👕 ${combo.top.name}`
+          : `👕 ${combo.top.name} (${combo.top.color})`
+      );
+    }
+    if (combo.bottom) {
+      pieces.push(
+        combo.bottom.isFallback
+          ? `👖 ${combo.bottom.name}`
+          : `👖 ${combo.bottom.name} (${combo.bottom.color})`
+      );
+    }
+    if (combo.shoe) {
+      pieces.push(
+        combo.shoe.isFallback
+          ? `👟 ${combo.shoe.name}`
+          : `👟 ${combo.shoe.name} (${combo.shoe.color})`
+      );
+    }
+    if (combo.outer && (isCold || (!isWarm && index === 0))) {
+      pieces.push(`🧥 ${combo.outer.name} (${combo.outer.color})`);
+    }
 
-    if (targetCat !== 'top') {
-      pieces.push(topItem ? `👕 ${topItem.name} (${topItem.color})` : '👕 Suggested: Crisp White Tee');
-    }
-    if (targetCat !== 'bottom') {
-      pieces.push(bottomItem ? `👖 ${bottomItem.name} (${bottomItem.color})` : '👖 Suggested: Straight-Leg Jeans');
-    }
-    if (targetCat !== 'shoes') {
-      pieces.push(shoeItem ? `👟 ${shoeItem.name} (${shoeItem.color})` : '👟 Suggested: Clean White Sneakers');
-    }
-    if (targetCat !== 'outerwear' && outerItem && (isCold || (!isWarm && i === 0))) {
-      pieces.push(`🧥 ${outerItem.name} (${outerItem.color})`);
-    }
-
-    outfits.push({
-      label: `Look #${outfits.length + 1} — ${selectedStyle} Vibe`,
+    return {
+      label: `Look #${index + 1} — ${selectedStyle} Vibe`,
       pieces
-    });
-  }
+    };
+  });
 
   const matchingCount = closetItems.filter((item) => compatibleColors.includes(item.color)).length;
   const score = Math.min(98, Math.max(72, 74 + matchingCount * 4));
