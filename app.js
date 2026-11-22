@@ -166,82 +166,84 @@ function generateOutfitMatches(targetItem) {
   const compatibleColors = COLOR_PAIRINGS[targetItem.color] || ['Black', 'White', 'Blue'];
   const norm = (val) => (val || '').trim().toLowerCase();
 
-  // Bucket all closet items by category (case-insensitive)
-  const allTops = closetItems.filter((i) => norm(i.category) === 'top');
-  const allBottoms = closetItems.filter((i) => norm(i.category) === 'bottom');
-  const allShoes = closetItems.filter((i) => norm(i.category) === 'shoes');
-  const allOuterwear = closetItems.filter((i) => norm(i.category) === 'outerwear');
+  // 1. Deduplicate closet items by name + category + color
+  const uniqueCloset = [];
+  const seenItems = new Set();
+  for (const item of closetItems) {
+    const key = `${norm(item.name)}|${norm(item.category)}|${norm(item.color)}`;
+    if (!seenItems.has(key)) {
+      seenItems.add(key);
+      uniqueCloset.push(item);
+    }
+  }
 
-  // Prefer color-matched items, but fall back to any item in that category
-  const getPool = (items, fallbackLabel) => {
+  // 2. Bucket unique items by category
+  const allTops = uniqueCloset.filter((i) => norm(i.category) === 'top');
+  const allBottoms = uniqueCloset.filter((i) => norm(i.category) === 'bottom');
+  const allShoes = uniqueCloset.filter((i) => norm(i.category) === 'shoes');
+  const allOuterwear = uniqueCloset.filter((i) => norm(i.category) === 'outerwear');
+
+  // 3. Prefer color-matched items first, then append remaining closet items so there is variety
+  const buildOrderedPool = (items, fallbackLabel) => {
     if (items.length === 0) return [{ name: fallbackLabel, color: '', isFallback: true }];
     const matched = items.filter((i) => compatibleColors.includes(i.color));
-    return matched.length > 0 ? matched : items;
+    const unmatched = items.filter((i) => !compatibleColors.includes(i.color));
+    return [...matched, ...unmatched];
   };
 
   const targetCat = norm(targetItem.category);
-  const topsPool = targetCat === 'top' ? [null] : getPool(allTops, 'Suggested: Crisp White Tee');
-  const bottomsPool = targetCat === 'bottom' ? [null] : getPool(allBottoms, 'Suggested: Straight-Leg Jeans');
-  const shoesPool = targetCat === 'shoes' ? [null] : getPool(allShoes, 'Suggested: Clean White Sneakers');
-  const outerwearPool = targetCat === 'outerwear' ? [null] : getPool(allOuterwear, null);
+  const topsPool = targetCat === 'top' ? [null] : buildOrderedPool(allTops, 'Suggested: Crisp White Tee');
+  const bottomsPool = targetCat === 'bottom' ? [null] : buildOrderedPool(allBottoms, 'Suggested: Straight-Leg Jeans');
+  const shoesPool = targetCat === 'shoes' ? [null] : buildOrderedPool(allShoes, 'Suggested: Clean White Sneakers');
+  const outerwearPool = targetCat === 'outerwear' ? [null] : buildOrderedPool(allOuterwear, null);
 
   const isCold = currentWeather.condition === 'cold';
   const isWarm = currentWeather.condition === 'warm';
 
-  // Build all unique combinations (Top x Bottom x Shoes)
-  const allCombinations = [];
+  // 4. Generate strictly unique outfit combinations
+  const outfits = [];
+  const usedSignatures = new Set();
+
   for (let t = 0; t < topsPool.length; t++) {
     for (let b = 0; b < bottomsPool.length; b++) {
       for (let s = 0; s < shoesPool.length; s++) {
-        allCombinations.push({
-          top: topsPool[t],
-          bottom: bottomsPool[b],
-          shoe: shoesPool[s],
-          outer: outerwearPool[0] && !outerwearPool[0].isFallback
-            ? outerwearPool[(t + b + s) % outerwearPool.length]
-            : null
-        });
+        if (outfits.length >= 3) break;
+
+        const top = topsPool[t];
+        const bottom = bottomsPool[b];
+        const shoe = shoesPool[s];
+        const outer = outerwearPool[0] && !outerwearPool[0].isFallback
+          ? outerwearPool[(t + b + s) % outerwearPool.length]
+          : null;
+
+        const pieces = [`🆕 ${targetItem.name} (${targetItem.color})`];
+
+        if (top) {
+          pieces.push(top.isFallback ? `👕 ${top.name}` : `👕 ${top.name} (${top.color})`);
+        }
+        if (bottom) {
+          pieces.push(bottom.isFallback ? `👖 ${bottom.name}` : `👖 ${bottom.name} (${bottom.color})`);
+        }
+        if (shoe) {
+          pieces.push(shoe.isFallback ? `👟 ${shoe.name}` : `👟 ${shoe.name} (${shoe.color})`);
+        }
+        if (outer && (isCold || (!isWarm && outfits.length === 0))) {
+          pieces.push(`🧥 ${outer.name} (${outer.color})`);
+        }
+
+        const signature = pieces.join('||');
+        if (!usedSignatures.has(signature)) {
+          usedSignatures.add(signature);
+          outfits.push({
+            label: `Look #${outfits.length + 1} — ${selectedStyle} Vibe`,
+            pieces
+          });
+        }
       }
     }
   }
 
-  // Pick up to 3 distinct looks
-  const uniqueLooks = allCombinations.slice(0, 3);
-  const outfits = uniqueLooks.map((combo, index) => {
-    const pieces = [`🆕 ${targetItem.name} (${targetItem.color})`];
-
-    if (combo.top) {
-      pieces.push(
-        combo.top.isFallback
-          ? `👕 ${combo.top.name}`
-          : `👕 ${combo.top.name} (${combo.top.color})`
-      );
-    }
-    if (combo.bottom) {
-      pieces.push(
-        combo.bottom.isFallback
-          ? `👖 ${combo.bottom.name}`
-          : `👖 ${combo.bottom.name} (${combo.bottom.color})`
-      );
-    }
-    if (combo.shoe) {
-      pieces.push(
-        combo.shoe.isFallback
-          ? `👟 ${combo.shoe.name}`
-          : `👟 ${combo.shoe.name} (${combo.shoe.color})`
-      );
-    }
-    if (combo.outer && (isCold || (!isWarm && index === 0))) {
-      pieces.push(`🧥 ${combo.outer.name} (${combo.outer.color})`);
-    }
-
-    return {
-      label: `Look #${index + 1} — ${selectedStyle} Vibe`,
-      pieces
-    };
-  });
-
-  const matchingCount = closetItems.filter((item) => compatibleColors.includes(item.color)).length;
+  const matchingCount = uniqueCloset.filter((item) => compatibleColors.includes(item.color)).length;
   const score = Math.min(98, Math.max(72, 74 + matchingCount * 4));
 
   const styleNotes = {
@@ -268,6 +270,8 @@ function generateOutfitMatches(targetItem) {
     outfits
   };
 }
+
+
 
 // ==========================================
 // 5. UI RENDERING
