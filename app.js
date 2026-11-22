@@ -158,6 +158,64 @@ async function fetchClosetItems() {
   }
   renderCloset();
 }
+async function createClosetItem(newItem) {
+  if (supabaseClient) {
+    const { data: { session } } = await supabaseClient.auth.getSession();
+    const user = session?.user;
+
+    if (user) {
+      const payload = {
+        name: newItem.name,
+        category: newItem.category,
+        color: newItem.color,
+        user_id: user.id
+      };
+
+      const { data, error } = await supabaseClient
+        .from('closet_items')
+        .insert([payload])
+        .select();
+
+      if (!error && data && data[0]) {
+        closetItems.unshift(data[0]);
+        renderCloset();
+        return;
+      } else {
+        console.error('Insert error:', error);
+        alert(`Could not save to cloud: ${error?.message || 'Unknown error'}`);
+        return;
+      }
+    }
+  }
+
+  // Guest local fallback (when logged out)
+  const itemWithId = { ...newItem, id: Date.now().toString() };
+  closetItems.unshift(itemWithId);
+  localStorage.setItem('virtual_closet_items', JSON.stringify(closetItems));
+  renderCloset();
+}
+
+async function deleteClosetItem(itemId) {
+  if (supabaseClient && !String(itemId).startsWith('demo-')) {
+    const { data: { session } } = await supabaseClient.auth.getSession();
+    if (session?.user) {
+      const { error } = await supabaseClient
+        .from('closet_items')
+        .delete()
+        .eq('id', itemId)
+        .eq('user_id', session.user.id);
+
+      if (error) {
+        console.error('Delete error:', error);
+        return;
+      }
+    }
+  }
+
+  closetItems = closetItems.filter((item) => String(item.id) !== String(itemId));
+  localStorage.setItem('virtual_closet_items', JSON.stringify(closetItems));
+  renderCloset();
+}
 
 // ==========================================
 // 4. STYLING & OUTFIT ENGINE (WEATHER-AWARE)
