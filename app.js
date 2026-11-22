@@ -108,7 +108,6 @@ async function fetchClosetItems() {
         statusEl.textContent = `Connected & Synced as ${user.email}`;
       }
 
-      // Fetch only this logged-in user's saved closet items
       const { data, error } = await supabaseClient
         .from('closet_items')
         .select('*')
@@ -116,7 +115,25 @@ async function fetchClosetItems() {
         .order('created_at', { ascending: false });
 
       if (!error && data) {
-        closetItems = data;
+        // If this logged-in user has an empty closet, seed starter items into Supabase
+        if (data.length === 0) {
+          const starterRows = STARTER_CLOSET.map((item) => ({
+            name: item.name,
+            category: item.category,
+            color: item.color,
+            user_id: user.id
+          }));
+
+          const { data: seededData, error: seedError } = await supabaseClient
+            .from('closet_items')
+            .insert(starterRows)
+            .select();
+
+          closetItems = !seedError && seededData ? seededData : [...STARTER_CLOSET];
+        } else {
+          closetItems = data;
+        }
+
         renderCloset();
         return;
       } else {
@@ -142,83 +159,39 @@ async function fetchClosetItems() {
   renderCloset();
 }
 
-async function createClosetItem(newItem) {
-  if (supabaseClient) {
-    const { data: { session } } = await supabaseClient.auth.getSession();
-    const user = session?.user;
-
-    if (user) {
-      const payload = {
-        name: newItem.name,
-        category: newItem.category,
-        color: newItem.color,
-        user_id: user.id
-      };
-
-      const { data, error } = await supabaseClient
-        .from('closet_items')
-        .insert([payload])
-        .select();
-
-      if (!error && data && data[0]) {
-        closetItems.unshift(data[0]);
-        renderCloset();
-        return;
-      } else {
-        console.error('Insert error:', error);
-        alert(`Could not save to cloud: ${error?.message || 'Unknown error'}`);
-        return;
-      }
-    }
-  }
-
-  // Guest local fallback (when logged out)
-  const itemWithId = { ...newItem, id: Date.now().toString() };
-  closetItems.unshift(itemWithId);
-  localStorage.setItem('virtual_closet_items', JSON.stringify(closetItems));
-  renderCloset();
-}
-
-async function deleteClosetItem(itemId) {
-  if (supabaseClient && !String(itemId).startsWith('demo-')) {
-    const { data: { session } } = await supabaseClient.auth.getSession();
-    if (session?.user) {
-      const { error } = await supabaseClient
-        .from('closet_items')
-        .delete()
-        .eq('id', itemId)
-        .eq('user_id', session.user.id);
-
-      if (error) {
-        console.error('Delete error:', error);
-        return;
-      }
-    }
-  }
-
-  closetItems = closetItems.filter((item) => String(item.id) !== String(itemId));
-  localStorage.setItem('virtual_closet_items', JSON.stringify(closetItems));
-  renderCloset();
-}
-
 // ==========================================
 // 4. STYLING & OUTFIT ENGINE (WEATHER-AWARE)
 // ==========================================
 function generateOutfitMatches(targetItem) {
   const compatibleColors = COLOR_PAIRINGS[targetItem.color] || ['Black', 'White', 'Blue'];
+  const norm = (val) => (val || '').trim().toLowerCase();
 
-  const matchingItems = closetItems.filter((item) =>
-    compatibleColors.includes(item.color)
-  );
+  // Bucket all closet items by category (case-insensitive)
+  const allTops = closetItems.filter((i) => norm(i.category) === 'top');
+  const allBottoms = closetItems.filter((i) => norm(i.category) === 'bottom');
+  const allShoes = closetItems.filter((i) => norm(i.category) === 'shoes');
+  const allOuterwear = closetItems.filter((i) => norm(i.category) === 'outerwear');
 
-  const tops = matchingItems.filter((i) => i.category === 'Top');
-  const bottoms = matchingItems.filter((i) => i.category === 'Bottom');
-  const shoes = matchingItems.filter((i) => i.category === 'Shoes');
-  const outerwear = matchingItems.filter((i) => i.category === 'Outerwear');
+  // Prefer color-matched items, but fall back to any item in that category
+  const topsPool = allTops.filter((i) => compatibleColors.includes(i.color)).length > 0
+    ? allTops.filter((i) => compatibleColors.includes(i.color))
+    : allTops;
 
+  const bottomsPool = allBottoms.filter((i) => compatibleColors.includes(i.color)).length > 0
+    ? allBottoms.filter((i) => compatibleColors.includes(i.color))
+    : allBottoms;
+
+  const shoesPool = allShoes.filter((i) => compatibleColors.includes(i.color)).length > 0
+    ? allShoes.filter((i) => compatibleColors.includes(i.color))
+    : allShoes;
+
+  const outerwearPool = allOuterwear.filter((i) => compatibleColors.includes(i.color)).length > 0
+    ? allOuterwear.filter((i) => compatibleColors.includes(i.color))
+    : allOuterwear;
+
+  const targetCat = norm(targetItem.category);
   const outfits = [];
-  const totalCombinations = Math.max(tops.length, 1) * Math.max(bottoms.length, 1);
-  const maxLooks = Math.min(3, totalCombinations);
+  const maxLooks = Math.min(3, Math.max(1, topsPool.length, bottomsPool.length, shoesPool.length));
 
   const isCold = currentWeather.condition === 'cold';
   const isWarm = currentWeather.condition === 'warm';
@@ -226,37 +199,22 @@ function generateOutfitMatches(targetItem) {
   for (let i = 0; i < maxLooks; i++) {
     const pieces = [`🆕 ${targetItem.name} (${targetItem.color})`];
 
-    const topItem = tops.length > 0 ? tops[i % tops.length] : null;
-    const bottomItem = bottoms.length > 0 ? bottoms[i % bottoms.length] : null;
-    const shoeItem = shoes.length > 0 ? shoes[i % shoes.length] : null;
-    const outerItem = outerwear.length > 0 ? outerwear[i % outerwear.length] : null;
+    const topItem = topsPool.length > 0 ? topsPool[i % topsPool.length] : null;
+    const bottomItem = bottomsPool.length > 0 ? bottomsPool[i % bottomsPool.length] : null;
+    const shoeItem = shoesPool.length > 0 ? shoesPool[i % shoesPool.length] : null;
+    const outerItem = outerwearPool.length > 0 ? outerwearPool[i % outerwearPool.length] : null;
 
-    if (targetItem.category === 'Top') {
-      if (bottomItem) pieces.push(`👖 ${bottomItem.name}`);
-      if (shoeItem) pieces.push(`👟 ${shoeItem.name}`);
-      if (outerItem && (isCold || (!isWarm && i === 0))) {
-        pieces.push(`🧥 ${outerItem.name}`);
-      }
-    } else if (targetItem.category === 'Bottom') {
-      if (topItem) pieces.push(`👕 ${topItem.name}`);
-      if (shoeItem) pieces.push(`👟 ${shoeItem.name}`);
-      if (outerItem && (isCold || (!isWarm && i === 0))) {
-        pieces.push(`🧥 ${outerItem.name}`);
-      }
-    } else if (targetItem.category === 'Outerwear') {
-      if (topItem) pieces.push(`👕 ${topItem.name}`);
-      if (bottomItem) pieces.push(`👖 ${bottomItem.name}`);
-      if (shoeItem) pieces.push(`👟 ${shoeItem.name}`);
-    } else if (targetItem.category === 'Shoes') {
-      if (topItem) pieces.push(`👕 ${topItem.name}`);
-      if (bottomItem) pieces.push(`👖 ${bottomItem.name}`);
-      if (outerItem && isCold) {
-        pieces.push(`🧥 ${outerItem.name}`);
-      }
-    } else {
-      if (topItem) pieces.push(`👕 ${topItem.name}`);
-      if (bottomItem) pieces.push(`👖 ${bottomItem.name}`);
-      if (shoeItem) pieces.push(`👟 ${shoeItem.name}`);
+    if (targetCat !== 'top') {
+      pieces.push(topItem ? `👕 ${topItem.name} (${topItem.color})` : '👕 Suggested: Crisp White Tee');
+    }
+    if (targetCat !== 'bottom') {
+      pieces.push(bottomItem ? `👖 ${bottomItem.name} (${bottomItem.color})` : '👖 Suggested: Straight-Leg Jeans');
+    }
+    if (targetCat !== 'shoes') {
+      pieces.push(shoeItem ? `👟 ${shoeItem.name} (${shoeItem.color})` : '👟 Suggested: Clean White Sneakers');
+    }
+    if (targetCat !== 'outerwear' && outerItem && (isCold || (!isWarm && i === 0))) {
+      pieces.push(`🧥 ${outerItem.name} (${outerItem.color})`);
     }
 
     outfits.push({
@@ -265,7 +223,8 @@ function generateOutfitMatches(targetItem) {
     });
   }
 
-  const score = Math.min(98, Math.max(68, 70 + matchingItems.length * 5));
+  const matchingCount = closetItems.filter((item) => compatibleColors.includes(item.color)).length;
+  const score = Math.min(98, Math.max(72, 74 + matchingCount * 4));
 
   const styleNotes = {
     Minimalist: `Keep the silhouette clean. Let the ${targetItem.color.toLowerCase()} tone anchor the look without competing patterns.`,
