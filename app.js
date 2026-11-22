@@ -103,30 +103,35 @@ async function fetchClosetItems() {
     const { data: { session } } = await supabaseClient.auth.getSession();
     const user = session?.user;
 
-    if (statusEl) {
-      statusEl.textContent = user
-        ? `Connected as ${user.email}`
-        : 'Connected to Supabase Cloud Database';
-    }
+    if (user) {
+      if (statusEl) {
+        statusEl.textContent = `Connected & Synced as ${user.email}`;
+      }
 
-    const { data, error } = await supabaseClient
-      .from('closet_items')
-      .select('*')
-      .order('created_at', { ascending: false });
+      // Fetch only this logged-in user's saved closet items
+      const { data, error } = await supabaseClient
+        .from('closet_items')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false });
 
-    if (!error && data) {
-      closetItems = data;
-      renderCloset();
-      return;
-    } else {
-      console.error('Supabase fetch error:', error);
-      if (statusEl) statusEl.textContent = 'Supabase error — using local backup';
+      if (!error && data) {
+        closetItems = data;
+        renderCloset();
+        return;
+      } else {
+        console.error('Supabase fetch error:', error);
+        if (statusEl) statusEl.textContent = `Sync error: ${error.message}`;
+        return;
+      }
+    } else if (statusEl) {
+      statusEl.textContent = 'Guest Mode (Log in to save items permanently to the cloud)';
     }
   } else if (statusEl) {
     statusEl.textContent = 'Running in Local Demo Mode';
   }
 
-  // LocalStorage fallback
+  // Guest / LocalStorage fallback when not logged in
   const saved = localStorage.getItem('virtual_closet_items');
   if (saved) {
     closetItems = JSON.parse(saved);
@@ -140,33 +145,34 @@ async function fetchClosetItems() {
 async function createClosetItem(newItem) {
   if (supabaseClient) {
     const { data: { session } } = await supabaseClient.auth.getSession();
-    const userId = session?.user?.id;
+    const user = session?.user;
 
-    const payload = {
-      name: newItem.name,
-      category: newItem.category,
-      color: newItem.color
-    };
+    if (user) {
+      const payload = {
+        name: newItem.name,
+        category: newItem.category,
+        color: newItem.color,
+        user_id: user.id
+      };
 
-    if (userId) {
-      payload.user_id = userId;
-    }
+      const { data, error } = await supabaseClient
+        .from('closet_items')
+        .insert([payload])
+        .select();
 
-    const { data, error } = await supabaseClient
-      .from('closet_items')
-      .insert([payload])
-      .select();
-
-    if (!error && data && data[0]) {
-      closetItems.unshift(data[0]);
-      renderCloset();
-      return;
-    } else {
-      console.error('Insert error:', error);
+      if (!error && data && data[0]) {
+        closetItems.unshift(data[0]);
+        renderCloset();
+        return;
+      } else {
+        console.error('Insert error:', error);
+        alert(`Could not save to cloud: ${error?.message || 'Unknown error'}`);
+        return;
+      }
     }
   }
 
-  // Local fallback
+  // Guest local fallback (when logged out)
   const itemWithId = { ...newItem, id: Date.now().toString() };
   closetItems.unshift(itemWithId);
   localStorage.setItem('virtual_closet_items', JSON.stringify(closetItems));
@@ -175,13 +181,18 @@ async function createClosetItem(newItem) {
 
 async function deleteClosetItem(itemId) {
   if (supabaseClient && !String(itemId).startsWith('demo-')) {
-    const { error } = await supabaseClient
-      .from('closet_items')
-      .delete()
-      .eq('id', itemId);
+    const { data: { session } } = await supabaseClient.auth.getSession();
+    if (session?.user) {
+      const { error } = await supabaseClient
+        .from('closet_items')
+        .delete()
+        .eq('id', itemId)
+        .eq('user_id', session.user.id);
 
-    if (error) {
-      console.error('Delete error:', error);
+      if (error) {
+        console.error('Delete error:', error);
+        return;
+      }
     }
   }
 
