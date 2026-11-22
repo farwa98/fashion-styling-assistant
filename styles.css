@@ -13,6 +13,13 @@ body {
   background-color: #f8f9fa;
   color: #1f2937;
   line-height: 1.5;
+  background-color: #faf8f5;
+  background-image:
+    linear-gradient(rgba(250, 248, 245, 0.87), rgba(250, 248, 245, 0.91)),
+    url("https://images.unsplash.com/photo-1558769132-cb1aea458c5e?auto=format&fit=crop&w=1920&q=80");
+  background-size: cover;
+  background-position: center;
+  background-attachment: fixed;
 }
 
 .hidden {
