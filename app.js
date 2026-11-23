@@ -22,12 +22,14 @@ let currentWeather = {
 // Starter items for first-time local demo visitors
 const STARTER_CLOSET = [
   { id: 'demo-1', name: 'Crisp White Tee', category: 'Top', color: 'White' },
-  { id: 'demo-2', name: 'Straight-Leg Blue Jeans', category: 'Bottom', color: 'Blue' },
-  { id: 'demo-3', name: 'Tailored Black Blazer', category: 'Outerwear', color: 'Black' },
-  { id: 'demo-4', name: 'White Leather Sneakers', category: 'Shoes', color: 'White' },
-  { id: 'demo-5', name: 'Beige Trench Coat', category: 'Outerwear', color: 'Beige' }
+  { id: 'demo-2', name: 'Black Ribbed Turtleneck', category: 'Top', color: 'Black' },
+  { id: 'demo-3', name: 'Straight-Leg Blue Jeans', category: 'Bottom', color: 'Blue' },
+  { id: 'demo-4', name: 'Tailored Beige Trousers', category: 'Bottom', color: 'Beige' },
+  { id: 'demo-5', name: 'White Leather Sneakers', category: 'Shoes', color: 'White' },
+  { id: 'demo-6', name: 'Black Chelsea Boots', category: 'Shoes', color: 'Black' },
+  { id: 'demo-7', name: 'Classic Trench Coat', category: 'Outerwear', color: 'Beige' },
+  { id: 'demo-8', name: 'Structured Wool Blazer', category: 'Outerwear', color: 'Black' }
 ];
-
 // Color Harmony Matrix
 const COLOR_PAIRINGS = {
   Black: ['White', 'Gray', 'Beige', 'Blue', 'Red', 'Black', 'Green'],
@@ -221,7 +223,7 @@ async function deleteClosetItem(itemId) {
 // 4. STYLING & OUTFIT ENGINE (WEATHER-AWARE)
 // ==========================================
 function generateOutfitMatches(targetItem) {
-  const compatibleColors = COLOR_PAIRINGS[targetItem.color] || ['Black', 'White', 'Blue'];
+  const compatibleColors = COLOR_PAIRINGS[targetItem.color] || ['Black', 'White', 'Blue', 'Beige'];
   const norm = (val) => (val || '').trim().toLowerCase();
 
   // 1. Deduplicate closet items by name + category + color
@@ -235,13 +237,13 @@ function generateOutfitMatches(targetItem) {
     }
   }
 
-  // 2. Bucket unique items by category
+  // 2. Bucket unique closet items by all 4 core categories
   const allTops = uniqueCloset.filter((i) => norm(i.category) === 'top');
   const allBottoms = uniqueCloset.filter((i) => norm(i.category) === 'bottom');
   const allShoes = uniqueCloset.filter((i) => norm(i.category) === 'shoes');
   const allOuterwear = uniqueCloset.filter((i) => norm(i.category) === 'outerwear');
 
-  // 3. Prefer color-matched items first, then append remaining closet items so there is variety
+  // 3. Sort each category so color-compatible closet pieces come first
   const buildOrderedPool = (items, fallbackLabel) => {
     if (items.length === 0) return [{ name: fallbackLabel, color: '', isFallback: true }];
     const matched = items.filter((i) => compatibleColors.includes(i.color));
@@ -250,15 +252,18 @@ function generateOutfitMatches(targetItem) {
   };
 
   const targetCat = norm(targetItem.category);
+
+  // Exclude the bought category from repeating unless needed; for Outerwear (like Fur Jacket),
+  // we pair it with Top + Bottom + Shoes from your closet.
   const topsPool = targetCat === 'top' ? [null] : buildOrderedPool(allTops, 'Suggested: Crisp White Tee');
   const bottomsPool = targetCat === 'bottom' ? [null] : buildOrderedPool(allBottoms, 'Suggested: Straight-Leg Jeans');
-  const shoesPool = targetCat === 'shoes' ? [null] : buildOrderedPool(allShoes, 'Suggested: Clean White Sneakers');
-  const outerwearPool = targetCat === 'outerwear' ? [null] : buildOrderedPool(allOuterwear, null);
+  const shoesPool = targetCat === 'shoes' ? [null] : buildOrderedPool(allShoes, 'Suggested: White Leather Sneakers');
+  const outerwearPool = targetCat === 'outerwear' ? [null] : buildOrderedPool(allOuterwear, 'Suggested: Classic Trench Coat');
 
   const isCold = currentWeather.condition === 'cold';
   const isWarm = currentWeather.condition === 'warm';
 
-  // 4. Generate strictly unique outfit combinations
+  // 4. Build up to 3 distinct outfit combinations
   const outfits = [];
   const usedSignatures = new Set();
 
@@ -274,6 +279,7 @@ function generateOutfitMatches(targetItem) {
           ? outerwearPool[(t + b + s) % outerwearPool.length]
           : null;
 
+        // Start with the new item you want to buy (e.g., Fur Jacket)
         const pieces = [`🆕 ${targetItem.name} (${targetItem.color})`];
 
         if (top) {
@@ -285,7 +291,8 @@ function generateOutfitMatches(targetItem) {
         if (shoe) {
           pieces.push(shoe.isFallback ? `👟 ${shoe.name}` : `👟 ${shoe.name} (${shoe.color})`);
         }
-        if (outer && (isCold || (!isWarm && outfits.length === 0))) {
+        // Add closet outerwear only if the user isn't already buying Outerwear (like a Fur Jacket)
+        if (outer && targetCat !== 'outerwear' && (isCold || (!isWarm && outfits.length === 0))) {
           pieces.push(`🧥 ${outer.name} (${outer.color})`);
         }
 
@@ -305,18 +312,18 @@ function generateOutfitMatches(targetItem) {
   const score = Math.min(98, Math.max(72, 74 + matchingCount * 4));
 
   const styleNotes = {
-    Minimalist: `Keep the silhouette clean. Let the ${targetItem.color.toLowerCase()} tone anchor the look without competing patterns.`,
-    Streetwear: `Play with proportions—pair this ${targetItem.color.toLowerCase()} piece with relaxed fits and your cleanest sneakers.`,
-    'Smart Casual': `Balance structured and relaxed textures. Tucking in your top or adding a layer elevates this effortlessly.`,
+    Minimalist: `Keep the silhouette clean. Let the ${targetItem.color.toLowerCase()} ${targetItem.name} anchor the look without competing patterns.`,
+    Streetwear: `Play with proportions—pair this ${targetItem.color.toLowerCase()} ${targetItem.name} with relaxed fits and your cleanest sneakers.`,
+    'Smart Casual': `Balance structured and relaxed textures so the ${targetItem.name} elevates your everyday pieces effortlessly.`,
     'Classic Chic': `Stick to intentional color blocking and refined footwear so the ${targetItem.name} looks tailored.`
   };
 
   let weatherTip = '';
   if (currentWeather.tempF !== null) {
     if (isCold) {
-      weatherTip = ` Since it's chilly (${currentWeather.tempF}°F), we prioritized layering pieces to keep you warm.`;
+      weatherTip = ` Since it's chilly (${currentWeather.tempF}°F), this layered combination will keep you warm.`;
     } else if (isWarm) {
-      weatherTip = ` With warm ${currentWeather.tempF}°F weather, we kept the look breathable and skipped heavy layers.`;
+      weatherTip = ` With warm ${currentWeather.tempF}°F weather, keep the base layers light and breathable.`;
     } else {
       weatherTip = ` Great fit for today's mild ${currentWeather.tempF}°F weather.`;
     }
@@ -328,7 +335,6 @@ function generateOutfitMatches(targetItem) {
     outfits
   };
 }
-
 
 
 // ==========================================
