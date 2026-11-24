@@ -463,6 +463,68 @@ function generateOutfitMatches(targetItem) {
 
         return Math.max(0, Math.min(100, score));
     }
+  
+// ==========================================
+// CLOTHING IMAGE SEARCH
+// ==========================================
+
+const clothingImageCache = new Map();
+
+async function searchClothingImages(name, color) {
+
+    const cacheKey = `${color} ${name}`
+        .trim()
+        .toLowerCase();
+
+    // Reuse results during the current session
+
+    if (clothingImageCache.has(cacheKey)) {
+        return clothingImageCache.get(cacheKey);
+    }
+
+    if (!supabaseClient) {
+        return [];
+    }
+
+    try {
+
+        const { data: { session } } =
+            await supabaseClient.auth.getSession();
+
+        if (!session?.user) {
+            return [];
+        }
+
+        const { data, error } =
+            await supabaseClient.functions.invoke(
+                'clothing-search',
+                {
+                    body: {
+                        name: name,
+                        color: color
+                    }
+                }
+            );
+
+        if (error) {
+            console.error('Image search failed:', error);
+            return [];
+        }
+
+        const products = data?.products || [];
+
+        clothingImageCache.set(cacheKey, products);
+
+        return products;
+
+    } catch (error) {
+
+        console.error('Clothing image error:', error);
+
+        return [];
+    }
+}
+
 
 
     // --------------------------------------
