@@ -1024,3 +1024,222 @@ a:focus-visible {
         animation: none !important;
     }
 }
+
+/* =========================================
+   20. CLOTHING PHOTO UPLOAD
+========================================= */
+
+.photo-upload {
+    padding: 20px;
+    border: 1px dashed var(--taupe);
+    background: var(--ivory);
+    border-radius: 4px;
+    margin-bottom: 24px;
+}
+
+.photo-upload input[type="file"] {
+    width: 100%;
+    padding: 12px;
+    background: var(--paper);
+    border: 1px solid var(--line);
+    font-size: 12px;
+}
+
+.photo-upload input::file-selector-button {
+    background: var(--mocha);
+    color: white;
+    border: none;
+    padding: 9px 14px;
+    margin-right: 10px;
+    cursor: pointer;
+}
+
+.photo-upload small {
+    font-size: 11px;
+    color: var(--muted);
+}
+
+
+/* =========================================
+   21. CLOTHING IMAGE CARDS
+========================================= */
+
+.clothing-photo {
+    width: 100%;
+    aspect-ratio: 3 / 4;
+    object-fit: contain;
+    background: #F1ECE5;
+    display: block;
+    border-radius: 3px;
+}
+
+.clothing-placeholder {
+    width: 100%;
+    aspect-ratio: 3 / 4;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--beige);
+    font-size: 42px;
+    border-radius: 3px;
+}
+
+.clothing-details {
+    padding: 12px;
+}
+
+.clothing-name {
+    font-size: 13px;
+    font-weight: 600;
+    margin: 0 0 4px;
+}
+
+.clothing-meta {
+    font-size: 11px;
+    color: var(--muted);
+}
+
+.image-source {
+    display: block;
+    font-size: 9px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    color: var(--mocha);
+    margin-top: 6px;
+}
+
+
+/* =========================================
+   22. VISUAL OUTFIT BOARDS
+========================================= */
+
+.outfit-list {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+.outfit-card {
+    padding: 20px;
+    background: var(--paper);
+}
+
+.outfit-card h4 {
+    font-family: var(--serif);
+    font-size: 22px;
+    font-weight: 400;
+    margin: 0 0 16px;
+}
+
+.outfit-image-grid {
+    display: grid;
+    grid-template-columns: repeat(
+        2,
+        minmax(0, 1fr)
+    );
+    gap: 12px;
+}
+
+.outfit-piece {
+    border: 1px solid var(--line);
+    background: white;
+    overflow: hidden;
+    min-width: 0;
+}
+
+.new-purchase {
+    border-color: var(--mocha);
+}
+
+.purchase-label {
+    display: block;
+    padding: 7px;
+    background: var(--mocha);
+    color: white;
+    text-align: center;
+    font-size: 9px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+}
+
+.owned-label {
+    display: block;
+    padding: 7px;
+    background: var(--ivory);
+    color: var(--mocha);
+    text-align: center;
+    font-size: 9px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+}
+
+
+/* =========================================
+   23. VISUAL VIRTUAL CLOSET
+========================================= */
+
+.closet-grid {
+    grid-template-columns: repeat(
+        auto-fill,
+        minmax(min(100%, 180px), 1fr)
+    );
+    gap: 20px;
+}
+
+.closet-card.visual-card {
+    display: block;
+    position: relative;
+    padding: 0;
+    overflow: hidden;
+    background: white;
+}
+
+.visual-card .delete-btn {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 30px;
+    height: 30px;
+    background: white;
+    border-radius: 50%;
+    z-index: 2;
+}
+
+.photo-search-btn {
+    margin: 0 12px 12px;
+    padding: 7px 10px;
+    background: transparent;
+    color: var(--mocha);
+    border: 1px solid var(--line);
+    font-size: 11px;
+}
+
+
+/* =========================================
+   24. RESPONSIVE IMAGE LAYOUT
+========================================= */
+
+@media (max-width: 560px) {
+
+    .outfit-image-grid,
+    .closet-grid {
+        grid-template-columns: repeat(
+            2,
+            minmax(0, 1fr)
+        );
+        gap: 10px;
+    }
+
+    .outfit-card {
+        padding: 12px;
+    }
+
+    .clothing-details {
+        padding: 8px;
+    }
+
+    .clothing-name {
+        font-size: 12px;
+    }
+}
+
