@@ -1406,4 +1406,5 @@ document.addEventListener('DOMContentLoaded', () => {
   updateAuthUI();
   fetchClosetItems();
   fetchLocalWeather();
+  window.searchClothingImages = searchClothingImages;
 });
