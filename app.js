@@ -1564,10 +1564,77 @@ async function getClothingImage(item) {
                 item.color
             );
 
-            const product = products.find((entry) =>
-                typeof entry.image === 'string' &&
-                entry.image.startsWith('https://')
-            );
+            
+// Normalize text for accurate matching
+
+const normalizeText = (text) =>
+    String(text || '')
+        .toLowerCase()
+        .replace(/[^a-z0-9\s]/g, ' ')
+        .trim();
+
+const itemName = normalizeText(item.name);
+const itemColor = normalizeText(item.color);
+
+const keywords = itemName
+    .split(/\s+/)
+    .filter(Boolean);
+
+
+// Filter and rank relevant products
+
+const rankedProducts = products
+
+    .filter((entry) => {
+
+        if (
+            typeof entry.image !== 'string' ||
+            !entry.image.startsWith('https://')
+        ) {
+            return false;
+        }
+
+        const title = normalizeText(entry.title);
+        const titleWords = title.split(/\s+/);
+
+        // Require every clothing keyword to match
+
+        return keywords.every(
+            (word) => titleWords.includes(word)
+        );
+    })
+
+    .map((entry) => {
+
+        const title = normalizeText(entry.title);
+
+        let relevance = 0;
+
+        // Reward exact clothing name
+
+        if (title.includes(itemName)) {
+            relevance += 50;
+        }
+
+        // Reward matching color
+
+        if (title.split(/\s+/).includes(itemColor)) {
+            relevance += 30;
+        }
+
+        return {
+            ...entry,
+            relevance
+        };
+    })
+
+    .sort((a, b) => b.relevance - a.relevance);
+
+
+// Select the most relevant product
+
+const product = rankedProducts[0] || null;
+
 
             if (product) {
                 return {
