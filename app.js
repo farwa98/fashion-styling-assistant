@@ -1567,11 +1567,30 @@ async function getClothingImage(item) {
             
 // Normalize text for accurate matching
 
+
+// Normalize clothing descriptions
+
 const normalizeText = (text) =>
     String(text || '')
         .toLowerCase()
         .replace(/[^a-z0-9\s]/g, ' ')
         .trim();
+
+
+// Recognize alternative clothing terms
+
+const synonyms = {
+    fur: ['fur', 'furry', 'teddy', 'sherpa'],
+    jacket: ['jacket', 'coat'],
+    coat: ['coat', 'jacket'],
+    trousers: ['trousers', 'pants', 'slacks'],
+    pants: ['pants', 'trousers', 'slacks'],
+    sneakers: ['sneakers', 'trainers'],
+    shirt: ['shirt', 'blouse'],
+    sweater: ['sweater', 'jumper', 'pullover'],
+    heels: ['heels', 'pumps', 'stilettos'],
+    jeans: ['jeans', 'denim']
+};
 
 const itemName = normalizeText(item.name);
 const itemColor = normalizeText(item.color);
@@ -1581,45 +1600,60 @@ const keywords = itemName
     .filter(Boolean);
 
 
-// Filter and rank relevant products
+// Rank products by relevance
 
 const rankedProducts = products
 
-    .filter((entry) => {
-
-        if (
-            typeof entry.image !== 'string' ||
-            !entry.image.startsWith('https://')
-        ) {
-            return false;
-        }
-
-        const title = normalizeText(entry.title);
-        const titleWords = title.split(/\s+/);
-
-        // Require every clothing keyword to match
-
-        return keywords.every(
-            (word) => titleWords.includes(word)
-        );
-    })
+    .filter((entry) =>
+        typeof entry.image === 'string' &&
+        entry.image.startsWith('https://')
+    )
 
     .map((entry) => {
 
         const title = normalizeText(entry.title);
+        const titleWords = title.split(/\s+/);
 
         let relevance = 0;
 
-        // Reward exact clothing name
+        // Match clothing keywords and synonyms
+
+        for (const keyword of keywords) {
+
+            const alternatives =
+                synonyms[keyword] || [keyword];
+
+            const matched = alternatives.some(
+                (word) => titleWords.includes(word)
+            );
+
+            if (matched) {
+                relevance += 40;
+            } else {
+                relevance -= 60;
+            }
+        }
+
+        // Reward correct color
+
+        if (titleWords.includes(itemColor)) {
+            relevance += 30;
+        }
+
+        // Reward exact clothing description
 
         if (title.includes(itemName)) {
             relevance += 50;
         }
 
-        // Reward matching color
+        // Avoid unrelated puffer jackets
 
-        if (title.split(/\s+/).includes(itemColor)) {
-            relevance += 30;
+        if (
+            keywords.includes('fur') &&
+            titleWords.includes('puffer') &&
+            !titleWords.includes('fur')
+        ) {
+            relevance -= 100;
         }
 
         return {
@@ -1628,12 +1662,15 @@ const rankedProducts = products
         };
     })
 
+    .filter((entry) => entry.relevance >= 40)
+
     .sort((a, b) => b.relevance - a.relevance);
 
 
-// Select the most relevant product
+// Select the best matching photograph
 
 const product = rankedProducts[0] || null;
+
 
 
             if (product) {
