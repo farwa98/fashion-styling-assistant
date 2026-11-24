@@ -1406,5 +1406,59 @@ document.addEventListener('DOMContentLoaded', () => {
   updateAuthUI();
   fetchClosetItems();
   fetchLocalWeather();
-  window.searchClothingImages = searchClothingImages;
+  
+// ==========================================
+// SERPAPI CLOTHING IMAGE SEARCH
+// ==========================================
+
+const clothingImageCache = new Map();
+
+async function searchClothingImages(name, color) {
+
+    const cacheKey = `${color} ${name}`
+        .trim()
+        .toLowerCase();
+
+    if (clothingImageCache.has(cacheKey)) {
+        return clothingImageCache.get(cacheKey);
+    }
+
+    try {
+
+        const { data, error } =
+            await supabaseClient.functions.invoke(
+                'clothing-search',
+                {
+                    body: {
+                        name: name,
+                        color: color
+                    }
+                }
+            );
+
+        if (error) {
+            console.error("Image search failed:", error);
+            return [];
+        }
+
+        const products = data?.products || [];
+
+        clothingImageCache.set(cacheKey, products);
+
+        console.log("Clothing images:", products);
+
+        return products;
+
+    } catch (error) {
+
+        console.error("Image search error:", error);
+
+        return [];
+    }
+}
+
+// Make the function available in the browser console
+
+window.searchClothingImages = searchClothingImages;
+
 });
