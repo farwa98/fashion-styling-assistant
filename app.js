@@ -219,121 +219,827 @@ async function deleteClosetItem(itemId) {
   renderCloset();
 }
 
+
 // ==========================================
-// 4. STYLING & OUTFIT ENGINE (WEATHER-AWARE)
+// 4. STYLING & OUTFIT RECOMMENDATION ENGINE
 // ==========================================
+
 function generateOutfitMatches(targetItem) {
-  const compatibleColors = COLOR_PAIRINGS[targetItem.color] || ['Black', 'White', 'Blue', 'Beige'];
-  const norm = (val) => (val || '').trim().toLowerCase();
 
-  // 1. Deduplicate closet items by name + category + color
-  const uniqueCloset = [];
-  const seenItems = new Set();
-  for (const item of closetItems) {
-    const key = `${norm(item.name)}|${norm(item.category)}|${norm(item.color)}`;
-    if (!seenItems.has(key)) {
-      seenItems.add(key);
-      uniqueCloset.push(item);
+    // --------------------------------------
+    // 1. Helper Functions
+    // --------------------------------------
+
+    const normalize = (value) => {
+        return String(value || '')
+            .trim()
+            .toLowerCase();
+    };
+
+    const itemKey = (item) => {
+        return [
+            normalize(item.name),
+            normalize(item.category),
+            normalize(item.color)
+        ].join('|');
+    };
+
+    const escapeHTML = (value) => {
+        return String(value).replace(
+            /[&<>"']/g,
+            (character) => ({
+                '&': '&amp;',
+                '<': '&lt;',
+                '>': '&gt;',
+                '"': '&quot;',
+                "'": '&#39;'
+            })[character]
+        );
+    };
+
+
+    // --------------------------------------
+    // 2. Remove Duplicate Closet Items
+    // --------------------------------------
+
+    const uniqueCloset = [];
+    const seenItems = new Set();
+
+    for (const item of closetItems) {
+
+        const key = itemKey(item);
+
+        if (!seenItems.has(key)) {
+            seenItems.add(key);
+            uniqueCloset.push(item);
+        }
     }
-  }
 
-  // 2. Bucket unique closet items by all 4 core categories
-  const allTops = uniqueCloset.filter((i) => norm(i.category) === 'top');
-  const allBottoms = uniqueCloset.filter((i) => norm(i.category) === 'bottom');
-  const allShoes = uniqueCloset.filter((i) => norm(i.category) === 'shoes');
-  const allOuterwear = uniqueCloset.filter((i) => norm(i.category) === 'outerwear');
 
-  // 3. Sort each category so color-compatible closet pieces come first
-  const buildOrderedPool = (items, fallbackLabel) => {
-    if (items.length === 0) return [{ name: fallbackLabel, color: '', isFallback: true }];
-    const matched = items.filter((i) => compatibleColors.includes(i.color));
-    const unmatched = items.filter((i) => !compatibleColors.includes(i.color));
-    return [...matched, ...unmatched];
-  };
+    // --------------------------------------
+    // 3. Color Compatibility
+    // --------------------------------------
 
-  const targetCat = norm(targetItem.category);
+    const neutralColors = [
+        'black',
+        'white',
+        'gray',
+        'beige',
+        'navy',
+        'brown'
+    ];
 
-  // Exclude the bought category from repeating unless needed; for Outerwear (like Fur Jacket),
-  // we pair it with Top + Bottom + Shoes from your closet.
-  const topsPool = targetCat === 'top' ? [null] : buildOrderedPool(allTops, 'Suggested: Crisp White Tee');
-  const bottomsPool = targetCat === 'bottom' ? [null] : buildOrderedPool(allBottoms, 'Suggested: Straight-Leg Jeans');
-  const shoesPool = targetCat === 'shoes' ? [null] : buildOrderedPool(allShoes, 'Suggested: White Leather Sneakers');
-  const outerwearPool = targetCat === 'outerwear' ? [null] : buildOrderedPool(allOuterwear, 'Suggested: Classic Trench Coat');
+    function getColorScore(color1, color2) {
 
-  const isCold = currentWeather.condition === 'cold';
-  const isWarm = currentWeather.condition === 'warm';
+        const first = normalize(color1);
+        const second = normalize(color2);
 
-  // 4. Build up to 3 distinct outfit combinations
-  const outfits = [];
-  const usedSignatures = new Set();
-
-  for (let t = 0; t < topsPool.length; t++) {
-    for (let b = 0; b < bottomsPool.length; b++) {
-      for (let s = 0; s < shoesPool.length; s++) {
-        if (outfits.length >= 3) break;
-
-        const top = topsPool[t];
-        const bottom = bottomsPool[b];
-        const shoe = shoesPool[s];
-        const outer = outerwearPool[0] && !outerwearPool[0].isFallback
-          ? outerwearPool[(t + b + s) % outerwearPool.length]
-          : null;
-
-        // Start with the new item you want to buy (e.g., Fur Jacket)
-        const pieces = [`🆕 ${targetItem.name} (${targetItem.color})`];
-
-        if (top) {
-          pieces.push(top.isFallback ? `👕 ${top.name}` : `👕 ${top.name} (${top.color})`);
-        }
-        if (bottom) {
-          pieces.push(bottom.isFallback ? `👖 ${bottom.name}` : `👖 ${bottom.name} (${bottom.color})`);
-        }
-        if (shoe) {
-          pieces.push(shoe.isFallback ? `👟 ${shoe.name}` : `👟 ${shoe.name} (${shoe.color})`);
-        }
-        // Add closet outerwear only if the user isn't already buying Outerwear (like a Fur Jacket)
-        if (outer && targetCat !== 'outerwear' && (isCold || (!isWarm && outfits.length === 0))) {
-          pieces.push(`🧥 ${outer.name} (${outer.color})`);
+        if (!first || !second) {
+            return 50;
         }
 
-        const signature = pieces.join('||');
-        if (!usedSignatures.has(signature)) {
-          usedSignatures.add(signature);
-          outfits.push({
-            label: `Look #${outfits.length + 1} — ${selectedStyle} Vibe`,
-            pieces
-          });
+        // Monochromatic outfits
+        if (first === second) {
+            return 95;
         }
-      }
+
+        // Neutral color combinations
+        if (
+            neutralColors.includes(first) &&
+            neutralColors.includes(second)
+        ) {
+            return 95;
+        }
+
+        // Check the existing color harmony matrix
+        const firstKey = Object.keys(COLOR_PAIRINGS)
+            .find((key) => normalize(key) === first);
+
+        const secondKey = Object.keys(COLOR_PAIRINGS)
+            .find((key) => normalize(key) === second);
+
+        const firstMatches = (
+            COLOR_PAIRINGS[firstKey] || []
+        ).map(normalize);
+
+        const secondMatches = (
+            COLOR_PAIRINGS[secondKey] || []
+        ).map(normalize);
+
+        if (
+            firstMatches.includes(second) ||
+            secondMatches.includes(first)
+        ) {
+            return 90;
+        }
+
+        if (
+            neutralColors.includes(first) ||
+            neutralColors.includes(second)
+        ) {
+            return 75;
+        }
+
+        return 30;
     }
-  }
 
-  const matchingCount = uniqueCloset.filter((item) => compatibleColors.includes(item.color)).length;
-  const score = Math.min(98, Math.max(72, 74 + matchingCount * 4));
 
-  const styleNotes = {
-    Minimalist: `Keep the silhouette clean. Let the ${targetItem.color.toLowerCase()} ${targetItem.name} anchor the look without competing patterns.`,
-    Streetwear: `Play with proportions—pair this ${targetItem.color.toLowerCase()} ${targetItem.name} with relaxed fits and your cleanest sneakers.`,
-    'Smart Casual': `Balance structured and relaxed textures so the ${targetItem.name} elevates your everyday pieces effortlessly.`,
-    'Classic Chic': `Stick to intentional color blocking and refined footwear so the ${targetItem.name} looks tailored.`
-  };
+    // --------------------------------------
+    // 4. Personal Style Compatibility
+    // --------------------------------------
 
-  let weatherTip = '';
-  if (currentWeather.tempF !== null) {
-    if (isCold) {
-      weatherTip = ` Since it's chilly (${currentWeather.tempF}°F), this layered combination will keep you warm.`;
-    } else if (isWarm) {
-      weatherTip = ` With warm ${currentWeather.tempF}°F weather, keep the base layers light and breathable.`;
+    const styleRules = {
+
+        Minimalist: {
+            preferred: [
+                'plain',
+                'basic',
+                'white tee',
+                'straight-leg',
+                'tailored',
+                'knit',
+                'loafers',
+                'crewneck',
+                'classic',
+                'ribbed'
+            ],
+
+            avoided: [
+                'neon',
+                'graphic',
+                'distressed',
+                'sequin'
+            ]
+        },
+
+        Streetwear: {
+            preferred: [
+                'oversized',
+                'hoodie',
+                'sneaker',
+                'cargo',
+                'baggy',
+                'graphic',
+                'denim',
+                'jeans',
+                'bomber',
+                'jogger',
+                'combat boots'
+            ],
+
+            avoided: [
+                'heels',
+                'stiletto',
+                'pumps',
+                'formal'
+            ]
+        },
+
+        'Smart Casual': {
+            preferred: [
+                'blazer',
+                'button down',
+                'button-down',
+                'trousers',
+                'loafers',
+                'chinos',
+                'cardigan',
+                'knit',
+                'dark denim'
+            ],
+
+            avoided: [
+                'ripped',
+                'jogger',
+                'sweatpants'
+            ]
+        },
+
+        'Classic Chic': {
+            preferred: [
+                'blazer',
+                'trench',
+                'tailored',
+                'heels',
+                'loafers',
+                'silk',
+                'trousers',
+                'structured',
+                'button down',
+                'cashmere'
+            ],
+
+            avoided: [
+                'distressed',
+                'graphic',
+                'jogger',
+                'neon'
+            ]
+        }
+    };
+
+    const activeStyle =
+        styleRules[selectedStyle] || styleRules.Minimalist;
+
+    function getStyleScore(item) {
+
+        const name = normalize(item.name);
+
+        let score = 60;
+
+        for (const keyword of activeStyle.preferred) {
+
+            if (name.includes(keyword)) {
+                score += 20;
+            }
+        }
+
+        for (const keyword of activeStyle.avoided) {
+
+            if (name.includes(keyword)) {
+                score -= 35;
+            }
+        }
+
+        return Math.max(0, Math.min(100, score));
+    }
+
+
+    // --------------------------------------
+    // 5. Weather Compatibility
+    // --------------------------------------
+
+    const isCold =
+        currentWeather.condition === 'cold';
+
+    const isWarm =
+        currentWeather.condition === 'warm';
+
+    function getWeatherScore(item) {
+
+        const name = normalize(item.name);
+
+        const warmClothing = [
+            'wool',
+            'fur',
+            'coat',
+            'hoodie',
+            'sweater',
+            'turtleneck',
+            'boots',
+            'fleece',
+            'thermal',
+            'cashmere',
+            'puffer'
+        ];
+
+        const lightClothing = [
+            'linen',
+            'shorts',
+            'sandals',
+            'tank top',
+            'sleeveless',
+            'crop top'
+        ];
+
+        const isWarmItem = warmClothing.some(
+            (keyword) => name.includes(keyword)
+        );
+
+        const isLightItem = lightClothing.some(
+            (keyword) => name.includes(keyword)
+        );
+
+        if (isCold) {
+
+            if (isWarmItem) {
+                return 95;
+            }
+
+            if (isLightItem) {
+                return 30;
+            }
+        }
+
+        if (isWarm) {
+
+            if (isLightItem) {
+                return 95;
+            }
+
+            if (isWarmItem) {
+                return 25;
+            }
+        }
+
+        return 70;
+    }
+
+
+    // --------------------------------------
+    // 6. Organize Clothing by Category
+    // --------------------------------------
+
+    const targetCategory =
+        normalize(targetItem.category);
+
+    const requiredCategories = [
+        'top',
+        'bottom',
+        'shoes'
+    ].filter(
+        (category) => category !== targetCategory
+    );
+
+    const categoryPools = {};
+    const missingCategories = [];
+
+    function getIndividualScore(item) {
+
+        const colorScore = getColorScore(
+            targetItem.color,
+            item.color
+        );
+
+        const styleScore = getStyleScore(item);
+
+        const weatherScore = getWeatherScore(item);
+
+        return (
+            colorScore * 0.50 +
+            styleScore * 0.35 +
+            weatherScore * 0.15
+        );
+    }
+
+    for (const category of requiredCategories) {
+
+        const items = uniqueCloset
+            .filter(
+                (item) =>
+                    normalize(item.category) === category
+            )
+            .sort(
+                (a, b) =>
+                    getIndividualScore(b) -
+                    getIndividualScore(a)
+            );
+
+        // Limit the pool to keep the website responsive
+        categoryPools[category] = items.slice(0, 20);
+
+        if (items.length === 0) {
+            missingCategories.push(category);
+        }
+    }
+
+
+    // --------------------------------------
+    // 7. Handle Missing Wardrobe Categories
+    // --------------------------------------
+
+    if (missingCategories.length > 0) {
+
+        return {
+            score: 0,
+
+            advice:
+                'Your closet is missing items in these ' +
+                'categories: ' +
+                missingCategories.join(', ') +
+                '. Add more clothing to generate ' +
+                'complete outfits using items you own.',
+
+            outfits: []
+        };
+    }
+
+
+    // --------------------------------------
+    // 8. Optional Outerwear for Cold Weather
+    // --------------------------------------
+
+    if (isCold && targetCategory !== 'outerwear') {
+
+        const outerwear = uniqueCloset
+            .filter(
+                (item) =>
+                    normalize(item.category) === 'outerwear'
+            )
+            .sort(
+                (a, b) =>
+                    getIndividualScore(b) -
+                    getIndividualScore(a)
+            );
+
+        if (outerwear.length > 0) {
+
+            categoryPools.outerwear =
+                outerwear.slice(0, 5);
+        }
+    }
+
+
+    // --------------------------------------
+    // 9. Score an Entire Outfit
+    // --------------------------------------
+
+    function calculateOutfitScore(items) {
+
+        const allItems = [
+            targetItem,
+            ...items
+        ];
+
+        let totalColorScore = 0;
+        let colorPairs = 0;
+
+        // Compare every clothing item with every other item
+        for (let i = 0; i < allItems.length; i++) {
+
+            for (
+                let j = i + 1;
+                j < allItems.length;
+                j++
+            ) {
+
+                totalColorScore += getColorScore(
+                    allItems[i].color,
+                    allItems[j].color
+                );
+
+                colorPairs++;
+            }
+        }
+
+        const colorScore = colorPairs > 0
+            ? totalColorScore / colorPairs
+            : 0;
+
+        const styleScore = allItems.reduce(
+            (total, item) =>
+                total + getStyleScore(item),
+            0
+        ) / allItems.length;
+
+        const weatherScore = allItems.reduce(
+            (total, item) =>
+                total + getWeatherScore(item),
+            0
+        ) / allItems.length;
+
+        return Math.round(
+            colorScore * 0.45 +
+            styleScore * 0.40 +
+            weatherScore * 0.15
+        );
+    }
+
+
+    // --------------------------------------
+    // 10. Generate Possible Outfit Combinations
+    // --------------------------------------
+
+    const candidates = [];
+
+    const categories = Object.keys(categoryPools);
+
+    function buildCombinations(index, currentItems) {
+
+        // A complete combination has been created
+        if (index === categories.length) {
+
+            candidates.push({
+
+                items: [...currentItems],
+
+                score: calculateOutfitScore(
+                    currentItems
+                )
+            });
+
+            return;
+        }
+
+        const category = categories[index];
+
+        for (const item of categoryPools[category]) {
+
+            buildCombinations(
+                index + 1,
+                [...currentItems, item]
+            );
+        }
+    }
+
+    buildCombinations(0, []);
+
+
+    // --------------------------------------
+    // 11. Rank Outfits by Compatibility
+    // --------------------------------------
+
+    candidates.sort(
+        (a, b) => b.score - a.score
+    );
+
+    // Avoid recommending very weak combinations
+    const compatibleOutfits = candidates.filter(
+        (outfit) => outfit.score >= 55
+    );
+
+    if (compatibleOutfits.length === 0) {
+
+        return {
+            score: candidates[0]?.score || 0,
+
+            advice:
+                'This item has limited compatibility ' +
+                'with your current wardrobe and style. ' +
+                'Consider another item or add more ' +
+                'clothing options to your closet.',
+
+            outfits: []
+        };
+    }
+
+
+    // --------------------------------------
+    // 12. Calculate Outfit Diversity
+    // --------------------------------------
+
+    function getOutfitDifference(outfit1, outfit2) {
+
+        let difference = 0;
+
+        for (const item of outfit1.items) {
+
+            const matchingCategory = outfit2.items.find(
+                (otherItem) =>
+                    normalize(otherItem.category) ===
+                    normalize(item.category)
+            );
+
+            if (
+                !matchingCategory ||
+                itemKey(item) !== itemKey(matchingCategory)
+            ) {
+                difference++;
+            }
+        }
+
+        return difference;
+    }
+
+
+    // Check whether the main clothing pieces change
+    function hasDifferentMainPiece(outfit1, outfit2) {
+
+        return outfit1.items.some((item) => {
+
+            const category = normalize(item.category);
+
+            if (
+                category !== 'top' &&
+                category !== 'bottom' &&
+                category !== 'outerwear'
+            ) {
+                return false;
+            }
+
+            const otherItem = outfit2.items.find(
+                (piece) =>
+                    normalize(piece.category) === category
+            );
+
+            return (
+                !otherItem ||
+                itemKey(item) !== itemKey(otherItem)
+            );
+        });
+    }
+
+
+    // --------------------------------------
+    // 13. Select Three Genuinely Different Looks
+    // --------------------------------------
+
+    const selectedOutfits = [];
+
+    // Always select the highest-scoring outfit first
+    selectedOutfits.push(compatibleOutfits[0]);
+
+    while (selectedOutfits.length < 3) {
+
+        let bestCandidate = null;
+        let bestRanking = -Infinity;
+
+        for (const candidate of compatibleOutfits) {
+
+            if (selectedOutfits.includes(candidate)) {
+                continue;
+            }
+
+            // Each look must differ from every selected look
+            const isDiverse = selectedOutfits.every(
+                (existing) =>
+                    getOutfitDifference(
+                        candidate,
+                        existing
+                    ) >= 2 &&
+                    hasDifferentMainPiece(
+                        candidate,
+                        existing
+                    )
+            );
+
+            if (!isDiverse) {
+                continue;
+            }
+
+            const minimumDifference = Math.min(
+                ...selectedOutfits.map(
+                    (existing) => getOutfitDifference(
+                        candidate,
+                        existing
+                    )
+                )
+            );
+
+            // Reward compatibility and outfit variety
+            const ranking =
+                candidate.score +
+                minimumDifference * 5;
+
+            if (ranking > bestRanking) {
+
+                bestCandidate = candidate;
+                bestRanking = ranking;
+            }
+        }
+
+        // Do not force repetitive outfits
+        if (!bestCandidate) {
+            break;
+        }
+
+        selectedOutfits.push(bestCandidate);
+    }
+
+
+    // --------------------------------------
+    // 14. Format Outfit Recommendations
+    // --------------------------------------
+
+    const categoryIcons = {
+        top: '👕',
+        bottom: '👖',
+        shoes: '👟',
+        outerwear: '🧥',
+        accessory: '👜'
+    };
+
+    const outfits = selectedOutfits.map(
+        (outfit, index) => {
+
+            const pieces = [
+                `🆕 ${escapeHTML(targetItem.name)} ` +
+                `(${escapeHTML(targetItem.color)})`
+            ];
+
+            for (const item of outfit.items) {
+
+                const category =
+                    normalize(item.category);
+
+                const icon =
+                    categoryIcons[category] || '👗';
+
+                pieces.push(
+                    `${icon} ${escapeHTML(item.name)} ` +
+                    `(${escapeHTML(item.color)})`
+                );
+            }
+
+            return {
+
+                label:
+                    `Look #${index + 1} — ` +
+                    `${escapeHTML(selectedStyle)} Vibe ` +
+                    `(${outfit.score}% Match)`,
+
+                pieces
+            };
+        }
+    );
+
+
+    // --------------------------------------
+    // 15. Personalized Styling Advice
+    // --------------------------------------
+
+    const styleAdvice = {
+
+        Minimalist:
+            'Keep the look clean and balanced with ' +
+            'neutral colors and simple silhouettes.',
+
+        Streetwear:
+            'Focus on relaxed silhouettes, layering, ' +
+            'denim, and comfortable footwear.',
+
+        'Smart Casual':
+            'Combine structured clothing with relaxed ' +
+            'everyday pieces for a polished look.',
+
+        'Classic Chic':
+            'Choose timeless pieces, refined footwear, ' +
+            'and elegant color combinations.'
+    };
+
+    let advice =
+        styleAdvice[selectedStyle] ||
+        styleAdvice.Minimalist;
+
+    const bestScore = selectedOutfits[0].score;
+
+    if (bestScore >= 85) {
+
+        advice +=
+            ' This item pairs very well with ' +
+            'your existing wardrobe.';
+
+    } else if (bestScore >= 70) {
+
+        advice +=
+            ' This item has several good styling ' +
+            'possibilities with your closet.';
+
     } else {
-      weatherTip = ` Great fit for today's mild ${currentWeather.tempF}°F weather.`;
-    }
-  }
 
-  return {
-    score,
-    advice: (styleNotes[selectedStyle] || styleNotes.Minimalist) + weatherTip,
-    outfits
-  };
+        advice +=
+            ' This item has moderate compatibility ' +
+            'with your current wardrobe.';
+    }
+
+
+    // --------------------------------------
+    // 16. Weather-Based Advice
+    // --------------------------------------
+
+    if (
+        isCold &&
+        currentWeather.tempF !== null
+    ) {
+
+        advice +=
+            ` Since it is ${currentWeather.tempF}°F ` +
+            'outside, consider warm layers.';
+
+        if (
+            targetCategory !== 'outerwear' &&
+            !categoryPools.outerwear
+        ) {
+
+            advice +=
+                ' Your closet has no saved outerwear.';
+        }
+
+    } else if (
+        isWarm &&
+        currentWeather.tempF !== null
+    ) {
+
+        advice +=
+            ` With temperatures around ` +
+            `${currentWeather.tempF}°F, ` +
+            'consider lightweight fabrics.';
+    }
+
+
+    // --------------------------------------
+    // 17. Explain Limited Outfit Variety
+    // --------------------------------------
+
+    if (selectedOutfits.length < 3) {
+
+        advice +=
+            ` We found ${selectedOutfits.length} ` +
+            'sufficiently different compatible ' +
+            'look(s). Add more clothing items for ' +
+            'greater outfit variety.';
+    }
+
+
+    // --------------------------------------
+    // 18. Return Final Recommendations
+    // --------------------------------------
+
+    return {
+        score: bestScore,
+        advice: advice,
+        outfits: outfits
+    };
 }
 
 
