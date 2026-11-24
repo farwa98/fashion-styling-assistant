@@ -167,6 +167,14 @@ async function createClosetItem(newItem) {
 
     if (user) {
       const payload = {
+          name: newItem.name,
+          category: newItem.category,
+          color: newItem.color,
+          image_url: newItem.image_url || null,
+          image_source: newItem.image_source || null,
+          user_id: user.id
+};
+
         name: newItem.name,
         category: newItem.category,
         color: newItem.color,
@@ -180,7 +188,178 @@ async function createClosetItem(newItem) {
 
       if (!error && data && data[0]) {
         closetItems.unshift(data[0]);
-        renderCloset();
+        
+function renderCloset() {
+
+    const grid = document.getElementById('closet-grid');
+
+    const count = document.getElementById('closet-count');
+
+    if (!grid) {
+        return;
+    }
+
+    if (count) {
+        count.textContent =
+            `${closetItems.length} items saved`;
+    }
+
+    const filteredItems =
+        activeCategoryFilter === 'All'
+            ? closetItems
+            : closetItems.filter(
+                (item) =>
+                    item.category === activeCategoryFilter
+            );
+
+    grid.replaceChildren();
+
+    if (filteredItems.length === 0) {
+
+        const message = document.createElement('p');
+
+        message.textContent =
+            'No clothing items in this category.';
+
+        grid.append(message);
+
+        return;
+    }
+
+    for (const item of filteredItems) {
+
+        const card = document.createElement('div');
+
+        card.className = 'closet-card visual-card';
+
+        const photo = createClothingPhoto(item);
+
+        const details = document.createElement('div');
+
+        details.className = 'clothing-details';
+
+        const name = document.createElement('p');
+
+        name.className = 'clothing-name';
+
+        name.textContent = item.name;
+
+        const meta = document.createElement('div');
+
+        meta.className = 'clothing-meta';
+
+        meta.textContent =
+            `${item.color} · ${item.category}`;
+
+        const source = document.createElement('span');
+
+        source.className = 'image-source';
+
+        source.textContent =
+            item.image_source || 'No image available';
+
+        details.append(name, meta, source);
+
+        const remove = document.createElement('button');
+
+        remove.className = 'delete-btn';
+
+        remove.textContent = '×';
+
+        remove.title = 'Remove clothing item';
+
+        remove.addEventListener('click', () => {
+            deleteClosetItem(item.id);
+        });
+
+        card.append(photo, details, remove);
+
+
+        // Find photos for existing wardrobe items
+
+        if (!item.image_url) {
+
+            const searchButton =
+                document.createElement('button');
+
+            searchButton.className = 'photo-search-btn';
+
+            searchButton.textContent = 'Find Photo';
+
+            searchButton.addEventListener('click', async () => {
+
+                searchButton.disabled = true;
+
+                searchButton.textContent = 'Searching...';
+
+                try {
+
+                    const reference =
+                        await getClothingImage(item);
+
+                    if (!reference.url) {
+
+                        searchButton.textContent = 'Try Again';
+
+                        return;
+                    }
+
+                    const sessionResult = supabaseClient
+                        ? await supabaseClient.auth.getSession()
+                        : null;
+
+                    const user =
+                        sessionResult?.data?.session?.user;
+
+                    if (user) {
+
+                        const { error } = await supabaseClient
+                            .from('closet_items')
+                            .update({
+                                image_url: reference.url,
+                                image_source: reference.source
+                            })
+                            .eq('id', item.id)
+                            .eq('user_id', user.id);
+
+                        if (error) {
+                            throw error;
+                        }
+                    }
+
+                    item.image_url = reference.url;
+
+                    item.image_source = reference.source;
+
+                    if (!user) {
+
+                        localStorage.setItem(
+                            'virtual_closet_items',
+                            JSON.stringify(closetItems)
+                        );
+                    }
+
+                    renderCloset();
+
+                } catch (error) {
+
+                    console.error(error);
+
+                    searchButton.textContent = 'Try Again';
+
+                } finally {
+
+                    searchButton.disabled = false;
+                }
+            });
+
+            card.append(searchButton);
+        }
+
+        grid.append(card);
+    }
+}
+
         return;
       } else {
         console.error('Insert error:', error);
@@ -983,15 +1162,30 @@ async function searchClothingImages(name, color) {
                 );
             }
 
-            return {
+           
+return {
 
-                label:
-                    `Look #${index + 1} — ` +
-                    `${escapeHTML(selectedStyle)} Vibe ` +
-                    `(${outfit.score}% Match)`,
+    label:
+        `Look #${index + 1} — ` +
+        `${selectedStyle} Vibe ` +
+        `(${outfit.score}% Match)`,
 
-                pieces
-            };
+    pieces,
+
+    items: [
+        {
+            ...targetItem,
+            isNewPurchase: true
+        },
+
+        ...outfit.items.map((item) => ({
+            ...item,
+            isNewPurchase: false
+        }))
+    ]
+
+};
+
         }
     );
 
@@ -1153,33 +1347,81 @@ function renderCloset() {
     .join('');
 }
 
-function renderMatchResults(result) {
-  const resultsContainer = document.getElementById('match-results');
-  const scoreEl = document.getElementById('match-score');
-  const adviceEl = document.getElementById('styling-advice');
-  const cardsContainer = document.getElementById('outfit-cards');
 
-  if (!resultsContainer) return;
+async function renderMatchResults(result) {
 
-  resultsContainer.classList.remove('hidden');
-  if (scoreEl) scoreEl.textContent = `${result.score}% Match`;
-  if (adviceEl) adviceEl.textContent = result.advice;
+    const container =
+        document.getElementById('match-results');
 
-  if (cardsContainer) {
-    cardsContainer.innerHTML = result.outfits
-      .map(
-        (outfit) => `
-        <div class="outfit-card">
-          <h4>${outfit.label}</h4>
-          <ul>
-            ${outfit.pieces.map((p) => `<li>${p}</li>`).join('')}
-          </ul>
-        </div>
-      `
-      )
-      .join('');
-  }
+    const score =
+        document.getElementById('match-score');
+
+    const advice =
+        document.getElementById('styling-advice');
+
+    const cards =
+        document.getElementById('outfit-cards');
+
+    if (!container || !cards) {
+        return;
+    }
+
+    container.classList.remove('hidden');
+
+    if (score) {
+        score.textContent = `${result.score}% Match`;
+    }
+
+    if (advice) {
+        advice.textContent = result.advice;
+    }
+
+    cards.replaceChildren();
+
+    for (const outfit of result.outfits) {
+
+        const card = document.createElement('article');
+
+        card.className = 'outfit-card';
+
+        const heading = document.createElement('h4');
+
+        heading.textContent = outfit.label;
+
+        const grid = document.createElement('div');
+
+        grid.className = 'outfit-image-grid';
+
+        card.append(heading, grid);
+
+        cards.append(card);
+
+        for (const item of outfit.items) {
+
+            const piece = createVisualPiece(item);
+
+            grid.append(piece);
+
+            if (!item.image_url) {
+
+                const reference =
+                    await getClothingImage(item);
+
+                if (!piece.isConnected) {
+                    continue;
+                }
+
+                item.image_url = reference.url;
+                item.image_source = reference.source;
+
+                piece.replaceWith(
+                    createVisualPiece(item)
+                );
+            }
+        }
+    }
 }
+
 
 // ==========================================
 // 6. AUTHENTICATION HANDLERS
@@ -1275,16 +1517,35 @@ document.addEventListener('DOMContentLoaded', () => {
   // 2. Style Matcher Form (Tab 1)
   const matcherForm = document.getElementById('matcher-form');
   if (matcherForm) {
-    matcherForm.addEventListener('submit', (e) => {
+    matcherForm.addEventListener('submit', async (e) => {
       e.preventDefault();
       const name = document.getElementById('buy-name').value.trim();
       const category = document.getElementById('buy-category').value;
       const color = document.getElementById('buy-color').value;
       if (!name) return;
 
-      const targetItem = { name, category, color };
-      const matchResult = generateOutfitMatches(targetItem);
-      renderMatchResults(matchResult);
+      
+let photo;
+
+try {
+    photo = await readClothingPhoto('buy-image');
+} catch (error) {
+    alert(error.message);
+    return;
+}
+
+const targetItem = {
+    name,
+    category,
+    color,
+    image_url: photo,
+    image_source: photo ? 'Personal photo' : null
+};
+
+const matchResult = generateOutfitMatches(targetItem);
+
+await renderMatchResults(matchResult);
+
     });
   }
 
@@ -1314,7 +1575,34 @@ document.addEventListener('DOMContentLoaded', () => {
       const color = document.getElementById('item-color').value;
       if (!name) return;
 
-      await createClosetItem({ name, category, color });
+      
+let photo;
+
+try {
+    photo = await readClothingPhoto('item-image');
+} catch (error) {
+    alert(error.message);
+    return;
+}
+
+const newItem = {
+    name,
+    category,
+    color,
+    image_url: photo,
+    image_source: photo ? 'Personal photo' : null
+};
+
+if (!photo) {
+
+    const reference = await getClothingImage(newItem);
+
+    newItem.image_url = reference.url;
+    newItem.image_source = reference.source;
+}
+
+await createClosetItem(newItem);
+
       addClosetForm.reset();
       addClosetForm.classList.add('hidden');
     });
@@ -1456,6 +1744,264 @@ async function searchClothingImages(name, color) {
         return [];
     }
 }
+
+// ==========================================
+// 8. CLOTHING IMAGE HANDLING
+// ==========================================
+
+const pendingImageSearches = new Map();
+
+
+// Convert personal photos into compressed images
+
+async function readClothingPhoto(inputId) {
+
+    const input = document.getElementById(inputId);
+    const file = input?.files?.[0];
+
+    if (!file) {
+        return null;
+    }
+
+    const allowedTypes = [
+        'image/jpeg',
+        'image/png',
+        'image/webp'
+    ];
+
+    if (!allowedTypes.includes(file.type)) {
+        throw new Error('Please select a JPG, PNG or WebP.');
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+        throw new Error('Please select an image under 10 MB.');
+    }
+
+    const image = await createImageBitmap(file);
+
+    const scale = Math.min(
+        1,
+        600 / Math.max(image.width, image.height)
+    );
+
+    const canvas = document.createElement('canvas');
+
+    canvas.width = Math.max(
+        1,
+        Math.round(image.width * scale)
+    );
+
+    canvas.height = Math.max(
+        1,
+        Math.round(image.height * scale)
+    );
+
+    const context = canvas.getContext('2d');
+
+    context.fillStyle = '#FFFFFF';
+
+    context.fillRect(
+        0,
+        0,
+        canvas.width,
+        canvas.height
+    );
+
+    context.drawImage(
+        image,
+        0,
+        0,
+        canvas.width,
+        canvas.height
+    );
+
+    image.close();
+
+    return canvas.toDataURL('image/jpeg', 0.75);
+}
+
+
+// Find an automatic reference image
+
+async function getClothingImage(item) {
+
+    if (item.image_url) {
+        return {
+            url: item.image_url,
+            source: item.image_source || 'Reference image'
+        };
+    }
+
+    const key = `${item.color} ${item.name}`
+        .trim()
+        .toLowerCase();
+
+    if (pendingImageSearches.has(key)) {
+        return pendingImageSearches.get(key);
+    }
+
+    const request = (async () => {
+
+        try {
+
+            const products = await searchClothingImages(
+                item.name,
+                item.color
+            );
+
+            const product = products.find((entry) =>
+                typeof entry.image === 'string' &&
+                entry.image.startsWith('https://')
+            );
+
+            if (product) {
+                return {
+                    url: product.image,
+                    source: 'Reference image'
+                };
+            }
+
+        } catch (error) {
+
+            console.error('Image unavailable:', error);
+
+        }
+
+        return {
+            url: null,
+            source: 'No image available'
+        };
+
+    })();
+
+    pendingImageSearches.set(key, request);
+
+    try {
+        return await request;
+    } finally {
+        pendingImageSearches.delete(key);
+    }
+}
+
+
+// Create a placeholder for missing photographs
+
+function createClothingPlaceholder(category) {
+
+    const icons = {
+        Top: '👕',
+        Bottom: '👖',
+        Outerwear: '🧥',
+        Shoes: '👟',
+        Accessory: '👜'
+    };
+
+    const placeholder = document.createElement('div');
+
+    placeholder.className = 'clothing-placeholder';
+
+    placeholder.textContent =
+        icons[category] || '👗';
+
+    return placeholder;
+}
+
+
+// Display a clothing photograph
+
+function createClothingPhoto(item) {
+
+    if (!item.image_url) {
+        return createClothingPlaceholder(item.category);
+    }
+
+    const image = document.createElement('img');
+
+    image.className = 'clothing-photo';
+
+    image.alt = `${item.color} ${item.name}`;
+
+    image.loading = 'lazy';
+
+    image.referrerPolicy = 'no-referrer';
+
+    const validUrl =
+        item.image_url.startsWith('https://') ||
+        item.image_url.startsWith('data:image/jpeg;base64,');
+
+    if (!validUrl) {
+        return createClothingPlaceholder(item.category);
+    }
+
+    image.src = item.image_url;
+
+    image.addEventListener('error', () => {
+
+        image.replaceWith(
+            createClothingPlaceholder(item.category)
+        );
+
+    }, { once: true });
+
+    return image;
+}
+
+
+// Generate an individual visual clothing card
+
+function createVisualPiece(item) {
+
+    const card = document.createElement('div');
+
+    card.className = 'outfit-piece';
+
+    if (item.isNewPurchase) {
+        card.classList.add('new-purchase');
+    }
+
+    const label = document.createElement('span');
+
+    label.className = item.isNewPurchase
+        ? 'purchase-label'
+        : 'owned-label';
+
+    label.textContent = item.isNewPurchase
+        ? 'Potential Purchase'
+        : 'From Your Closet';
+
+    const photo = createClothingPhoto(item);
+
+    const details = document.createElement('div');
+
+    details.className = 'clothing-details';
+
+    const name = document.createElement('p');
+
+    name.className = 'clothing-name';
+
+    name.textContent = item.name;
+
+    const meta = document.createElement('div');
+
+    meta.className = 'clothing-meta';
+
+    meta.textContent =
+        `${item.color} · ${item.category}`;
+
+    const source = document.createElement('span');
+
+    source.className = 'image-source';
+
+    source.textContent =
+        item.image_source || 'No image available';
+
+    details.append(name, meta, source);
+
+    card.append(label, photo, details);
+
+    return card;
+}
+
 
 // Make the function available in the browser console
 
