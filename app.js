@@ -1669,16 +1669,85 @@ const rankedProducts = products
 
 // Select the best matching photograph
 
-const product = rankedProducts[0] || null;
+
+// Check whether an image loads successfully
+
+function checkImage(url) {
+
+    return new Promise((resolve) => {
+
+        if (!url) {
+            resolve(false);
+            return;
+        }
+
+        const image = new Image();
+
+        const timeout = setTimeout(() => {
+            resolve(false);
+        }, 4000);
+
+        image.referrerPolicy = 'no-referrer';
+
+        image.onload = () => {
+            clearTimeout(timeout);
+            resolve(image.naturalWidth > 0);
+        };
+
+        image.onerror = () => {
+            clearTimeout(timeout);
+            resolve(false);
+        };
+
+        image.src = url;
+    });
+}
 
 
+// Select the top relevant search results
 
-            if (product) {
-                return {
-                    url: product.image,
-                    source: 'Reference image'
-                };
-            }
+const candidates = rankedProducts.slice(0, 10);
+
+
+// Check candidate images simultaneously
+
+const results = await Promise.all(
+
+    candidates.map(async (product) => {
+
+        // Try the thumbnail first
+
+        if (await checkImage(product.image)) {
+
+            return {
+                url: product.image,
+                source: 'Reference image'
+            };
+        }
+
+        // Try the original image as a fallback
+
+        if (await checkImage(product.original)) {
+
+            return {
+                url: product.original,
+                source: 'Reference image'
+            };
+        }
+
+        return null;
+    })
+);
+
+
+// Select the best working image
+
+const bestImage = results.find(Boolean);
+
+if (bestImage) {
+    return bestImage;
+}
+
 
         } catch (error) {
 
