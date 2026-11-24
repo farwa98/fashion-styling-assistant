@@ -174,13 +174,6 @@ async function createClosetItem(newItem) {
           image_source: newItem.image_source || null,
           user_id: user.id
 };
-
-        name: newItem.name,
-        category: newItem.category,
-        color: newItem.color,
-        user_id: user.id
-      };
-
       const { data, error } = await supabaseClient
         .from('closet_items')
         .insert([payload])
@@ -188,198 +181,36 @@ async function createClosetItem(newItem) {
 
       if (!error && data && data[0]) {
         closetItems.unshift(data[0]);
-        
-function renderCloset() {
-
-    const grid = document.getElementById('closet-grid');
-
-    const count = document.getElementById('closet-count');
-
-    if (!grid) {
-        return;
-    }
-
-    if (count) {
-        count.textContent =
-            `${closetItems.length} items saved`;
-    }
-
-    const filteredItems =
-        activeCategoryFilter === 'All'
-            ? closetItems
-            : closetItems.filter(
-                (item) =>
-                    item.category === activeCategoryFilter
-            );
-
-    grid.replaceChildren();
-
-    if (filteredItems.length === 0) {
-
-        const message = document.createElement('p');
-
-        message.textContent =
-            'No clothing items in this category.';
-
-        grid.append(message);
-
-        return;
-    }
-
-    for (const item of filteredItems) {
-
-        const card = document.createElement('div');
-
-        card.className = 'closet-card visual-card';
-
-        const photo = createClothingPhoto(item);
-
-        const details = document.createElement('div');
-
-        details.className = 'clothing-details';
-
-        const name = document.createElement('p');
-
-        name.className = 'clothing-name';
-
-        name.textContent = item.name;
-
-        const meta = document.createElement('div');
-
-        meta.className = 'clothing-meta';
-
-        meta.textContent =
-            `${item.color} · ${item.category}`;
-
-        const source = document.createElement('span');
-
-        source.className = 'image-source';
-
-        source.textContent =
-            item.image_source || 'No image available';
-
-        details.append(name, meta, source);
-
-        const remove = document.createElement('button');
-
-        remove.className = 'delete-btn';
-
-        remove.textContent = '×';
-
-        remove.title = 'Remove clothing item';
-
-        remove.addEventListener('click', () => {
-            deleteClosetItem(item.id);
-        });
-
-        card.append(photo, details, remove);
-
-
-        // Find photos for existing wardrobe items
-
-        if (!item.image_url) {
-
-            const searchButton =
-                document.createElement('button');
-
-            searchButton.className = 'photo-search-btn';
-
-            searchButton.textContent = 'Find Photo';
-
-            searchButton.addEventListener('click', async () => {
-
-                searchButton.disabled = true;
-
-                searchButton.textContent = 'Searching...';
-
-                try {
-
-                    const reference =
-                        await getClothingImage(item);
-
-                    if (!reference.url) {
-
-                        searchButton.textContent = 'Try Again';
-
-                        return;
-                    }
-
-                    const sessionResult = supabaseClient
-                        ? await supabaseClient.auth.getSession()
-                        : null;
-
-                    const user =
-                        sessionResult?.data?.session?.user;
-
-                    if (user) {
-
-                        const { error } = await supabaseClient
-                            .from('closet_items')
-                            .update({
-                                image_url: reference.url,
-                                image_source: reference.source
-                            })
-                            .eq('id', item.id)
-                            .eq('user_id', user.id);
-
-                        if (error) {
-                            throw error;
-                        }
-                    }
-
-                    item.image_url = reference.url;
-
-                    item.image_source = reference.source;
-
-                    if (!user) {
-
-                        localStorage.setItem(
-                            'virtual_closet_items',
-                            JSON.stringify(closetItems)
-                        );
-                    }
-
-                    renderCloset();
-
-                } catch (error) {
-
-                    console.error(error);
-
-                    searchButton.textContent = 'Try Again';
-
-                } finally {
-
-                    searchButton.disabled = false;
-                }
-            });
-
-            card.append(searchButton);
-        }
-
-        grid.append(card);
-    }
-}
-
-        return;
+        renderCloset();
+        return true;
       } else {
         console.error('Insert error:', error);
         alert(`Could not save to cloud: ${error?.message || 'Unknown error'}`);
-        return;
+        return false;
       }
     }
   }
 
   // Guest local fallback (when logged out)
   const itemWithId = { ...newItem, id: Date.now().toString() };
-  closetItems.unshift(itemWithId);
-  localStorage.setItem('virtual_closet_items', JSON.stringify(closetItems));
+  const updatedItems = [itemWithId, ...closetItems];
+  try {
+    localStorage.setItem('virtual_closet_items', JSON.stringify(updatedItems));
+  } catch (error) {
+    alert('Your browser storage is full. Try a smaller photo or log in.');
+    return false;
+  }
+  closetItems = updatedItems;
   renderCloset();
+  return true;
 }
 
 async function deleteClosetItem(itemId) {
+  let cloudUser = false;
   if (supabaseClient && !String(itemId).startsWith('demo-')) {
     const { data: { session } } = await supabaseClient.auth.getSession();
     if (session?.user) {
+      cloudUser = true;
       const { error } = await supabaseClient
         .from('closet_items')
         .delete()
@@ -394,7 +225,9 @@ async function deleteClosetItem(itemId) {
   }
 
   closetItems = closetItems.filter((item) => String(item.id) !== String(itemId));
-  localStorage.setItem('virtual_closet_items', JSON.stringify(closetItems));
+  if (!cloudUser) {
+    localStorage.setItem('virtual_closet_items', JSON.stringify(closetItems));
+  }
   renderCloset();
 }
 
@@ -643,69 +476,6 @@ function generateOutfitMatches(targetItem) {
         return Math.max(0, Math.min(100, score));
     }
   
-// ==========================================
-// CLOTHING IMAGE SEARCH
-// ==========================================
-
-const clothingImageCache = new Map();
-
-async function searchClothingImages(name, color) {
-
-    const cacheKey = `${color} ${name}`
-        .trim()
-        .toLowerCase();
-
-    // Reuse results during the current session
-
-    if (clothingImageCache.has(cacheKey)) {
-        return clothingImageCache.get(cacheKey);
-    }
-
-    if (!supabaseClient) {
-        return [];
-    }
-
-    try {
-
-        const { data: { session } } =
-            await supabaseClient.auth.getSession();
-
-        if (!session?.user) {
-            return [];
-        }
-
-        const { data, error } =
-            await supabaseClient.functions.invoke(
-                'clothing-search',
-                {
-                    body: {
-                        name: name,
-                        color: color
-                    }
-                }
-            );
-
-        if (error) {
-            console.error('Image search failed:', error);
-            return [];
-        }
-
-        const products = data?.products || [];
-
-        clothingImageCache.set(cacheKey, products);
-
-        return products;
-
-    } catch (error) {
-
-        console.error('Clothing image error:', error);
-
-        return [];
-    }
-}
-
-
-
     // --------------------------------------
     // 5. Weather Compatibility
     // --------------------------------------
@@ -1303,50 +1073,175 @@ return {
 // 5. UI RENDERING
 // ==========================================
 function renderCloset() {
-  const grid = document.getElementById('closet-grid');
-  const countEl = document.getElementById('closet-count');
-  if (!grid) return;
 
-  if (countEl) {
-    countEl.textContent = `${closetItems.length} item${closetItems.length === 1 ? '' : 's'} saved`;
-  }
+    const grid = document.getElementById('closet-grid');
 
-  const filteredItems =
-    activeCategoryFilter === 'All'
-      ? closetItems
-      : closetItems.filter((item) => item.category === activeCategoryFilter);
+    const count = document.getElementById('closet-count');
 
-  if (filteredItems.length === 0) {
-    grid.innerHTML = `<p style="color:#777; grid-column: 1 / -1;">No items found in this category. Click "+ Add Item" to build your closet!</p>`;
-    return;
-  }
+    if (!grid) {
+        return;
+    }
 
-  const categoryIcons = {
-    Top: '👕',
-    Bottom: '👖',
-    Outerwear: '🧥',
-    Shoes: '👟',
-    Accessory: '👜'
-  };
+    if (count) {
+        count.textContent =
+            `${closetItems.length} items saved`;
+    }
 
-  grid.innerHTML = filteredItems
-    .map(
-      (item) => `
-      <div class="closet-card">
-        <div class="closet-card-info">
-          <span class="item-icon">${categoryIcons[item.category] || '👗'}</span>
-          <div>
-            <strong>${item.name}</strong>
-            <div class="item-meta">${item.category} • ${item.color}</div>
-          </div>
-        </div>
-        <button class="delete-btn" onclick="deleteClosetItem('${item.id}')" title="Remove item">✕</button>
-      </div>
-    `
-    )
-    .join('');
+    const filteredItems =
+        activeCategoryFilter === 'All'
+            ? closetItems
+            : closetItems.filter(
+                (item) =>
+                    item.category === activeCategoryFilter
+            );
+
+    grid.replaceChildren();
+
+    if (filteredItems.length === 0) {
+
+        const message = document.createElement('p');
+
+        message.textContent =
+            'No clothing items in this category.';
+
+        grid.append(message);
+
+        return;
+    }
+
+    for (const item of filteredItems) {
+
+        const card = document.createElement('div');
+
+        card.className = 'closet-card visual-card';
+
+        const photo = createClothingPhoto(item);
+
+        const details = document.createElement('div');
+
+        details.className = 'clothing-details';
+
+        const name = document.createElement('p');
+
+        name.className = 'clothing-name';
+
+        name.textContent = item.name;
+
+        const meta = document.createElement('div');
+
+        meta.className = 'clothing-meta';
+
+        meta.textContent =
+            `${item.color} · ${item.category}`;
+
+        const source = document.createElement('span');
+
+        source.className = 'image-source';
+
+        source.textContent =
+            item.image_source || 'No image available';
+
+        details.append(name, meta, source);
+
+        const remove = document.createElement('button');
+
+        remove.className = 'delete-btn';
+
+        remove.textContent = '×';
+
+        remove.title = 'Remove clothing item';
+
+        remove.addEventListener('click', () => {
+            deleteClosetItem(item.id);
+        });
+
+        card.append(photo, details, remove);
+
+
+        // Find photos for existing wardrobe items
+
+        if (!item.image_url) {
+
+            const searchButton =
+                document.createElement('button');
+
+            searchButton.className = 'photo-search-btn';
+
+            searchButton.textContent = 'Find Photo';
+
+            searchButton.addEventListener('click', async () => {
+
+                searchButton.disabled = true;
+
+                searchButton.textContent = 'Searching...';
+
+                try {
+
+                    const reference =
+                        await getClothingImage(item);
+
+                    if (!reference.url) {
+
+                        searchButton.textContent = 'Try Again';
+
+                        return;
+                    }
+
+                    const sessionResult = supabaseClient
+                        ? await supabaseClient.auth.getSession()
+                        : null;
+
+                    const user =
+                        sessionResult?.data?.session?.user;
+
+                    if (user) {
+
+                        const { error } = await supabaseClient
+                            .from('closet_items')
+                            .update({
+                                image_url: reference.url,
+                                image_source: reference.source
+                            })
+                            .eq('id', item.id)
+                            .eq('user_id', user.id);
+
+                        if (error) {
+                            throw error;
+                        }
+                    }
+
+                    item.image_url = reference.url;
+
+                    item.image_source = reference.source;
+
+                    if (!user) {
+
+                        localStorage.setItem(
+                            'virtual_closet_items',
+                            JSON.stringify(closetItems)
+                        );
+                    }
+
+                    renderCloset();
+
+                } catch (error) {
+
+                    console.error(error);
+
+                    searchButton.textContent = 'Try Again';
+
+                } finally {
+
+                    searchButton.disabled = false;
+                }
+            });
+
+            card.append(searchButton);
+        }
+
+        grid.append(card);
+    }
 }
-
 
 async function renderMatchResults(result) {
 
@@ -1378,6 +1273,8 @@ async function renderMatchResults(result) {
 
     cards.replaceChildren();
 
+    const imageJobs = [];
+
     for (const outfit of result.outfits) {
 
         const card = document.createElement('article');
@@ -1403,12 +1300,13 @@ async function renderMatchResults(result) {
             grid.append(piece);
 
             if (!item.image_url) {
+                imageJobs.push(async () => {
 
                 const reference =
                     await getClothingImage(item);
 
                 if (!piece.isConnected) {
-                    continue;
+                    return;
                 }
 
                 item.image_url = reference.url;
@@ -1417,7 +1315,17 @@ async function renderMatchResults(result) {
                 piece.replaceWith(
                     createVisualPiece(item)
                 );
+                });
             }
+        }
+    }
+
+    // Show all outfit cards before loading remote photos.
+    for (const job of imageJobs) {
+        try {
+            await job();
+        } catch (error) {
+            console.error("Could not load outfit photo:", error);
         }
     }
 }
@@ -1493,210 +1401,7 @@ async function handleAuthSubmit(email, password) {
 }
 
 // ==========================================
-// 7. EVENT LISTENERS & INITIALIZATION
-// ==========================================
-document.addEventListener('DOMContentLoaded', () => {
-  // 1. Bottom Navigation Tabs ("Style Check" / "My Closet" / "My Style")
-  const navButtons = document.querySelectorAll('.bottom-nav .nav-item');
-  const tabPanels = document.querySelectorAll('.tab-panel');
-
-  navButtons.forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const targetId = btn.dataset.target;
-      if (!targetId) return;
-
-      navButtons.forEach((b) => b.classList.remove('active'));
-      btn.classList.add('active');
-
-      tabPanels.forEach((panel) => {
-        panel.classList.toggle('active', panel.id === targetId);
-      });
-    });
-  });
-
-  // 2. Style Matcher Form (Tab 1)
-  const matcherForm = document.getElementById('matcher-form');
-  if (matcherForm) {
-    matcherForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const name = document.getElementById('buy-name').value.trim();
-      const category = document.getElementById('buy-category').value;
-      const color = document.getElementById('buy-color').value;
-      if (!name) return;
-
-      
-let photo;
-
-try {
-    photo = await readClothingPhoto('buy-image');
-} catch (error) {
-    alert(error.message);
-    return;
-}
-
-const targetItem = {
-    name,
-    category,
-    color,
-    image_url: photo,
-    image_source: photo ? 'Personal photo' : null
-};
-
-const matchResult = generateOutfitMatches(targetItem);
-
-await renderMatchResults(matchResult);
-
-    });
-  }
-
-  // 3. My Closet Drawer Toggle & Add Form (Tab 2)
-  const toggleAddBtn = document.getElementById('toggle-add-btn');
-  const cancelAddBtn = document.getElementById('cancel-add-btn');
-  const addClosetForm = document.getElementById('add-closet-form');
-
-  if (toggleAddBtn && addClosetForm) {
-    toggleAddBtn.addEventListener('click', () => {
-      addClosetForm.classList.toggle('hidden');
-    });
-  }
-
-  if (cancelAddBtn && addClosetForm) {
-    cancelAddBtn.addEventListener('click', () => {
-      addClosetForm.classList.add('hidden');
-      addClosetForm.reset();
-    });
-  }
-
-  if (addClosetForm) {
-    addClosetForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const name = document.getElementById('item-name').value.trim();
-      const category = document.getElementById('item-category').value;
-      const color = document.getElementById('item-color').value;
-      if (!name) return;
-
-      
-let photo;
-
-try {
-    photo = await readClothingPhoto('item-image');
-} catch (error) {
-    alert(error.message);
-    return;
-}
-
-const newItem = {
-    name,
-    category,
-    color,
-    image_url: photo,
-    image_source: photo ? 'Personal photo' : null
-};
-
-if (!photo) {
-
-    const reference = await getClothingImage(newItem);
-
-    newItem.image_url = reference.url;
-    newItem.image_source = reference.source;
-}
-
-await createClosetItem(newItem);
-
-      addClosetForm.reset();
-      addClosetForm.classList.add('hidden');
-    });
-  }
-
-  // 4. Closet Category Filter Chips (Tab 2)
-  const filterChips = document.querySelectorAll('#closet-filters .filter-chip');
-  filterChips.forEach((chip) => {
-    chip.addEventListener('click', () => {
-      filterChips.forEach((c) => c.classList.remove('active'));
-      chip.classList.add('active');
-      activeCategoryFilter = chip.dataset.filter || 'All';
-      renderCloset();
-    });
-  });
-
-  // 5. Style Persona Cards (Tab 3)
-  const activeStyleBadge = document.getElementById('active-style-badge');
-  const personaCards = document.querySelectorAll('#persona-list .persona-card');
-
-  if (activeStyleBadge) activeStyleBadge.textContent = selectedStyle;
-
-  personaCards.forEach((card) => {
-    card.classList.toggle('active', card.dataset.style === selectedStyle);
-
-    card.addEventListener('click', () => {
-      personaCards.forEach((c) => c.classList.remove('active'));
-      card.classList.add('active');
-      selectedStyle = card.dataset.style;
-      localStorage.setItem('user_style_persona', selectedStyle);
-      if (activeStyleBadge) activeStyleBadge.textContent = selectedStyle;
-    });
-  });
-
-  // 6. Auth Modal & Login/Sign Up Handlers
-  const openAuthBtn = document.getElementById('open-auth-btn');
-  const closeAuthBtn = document.getElementById('close-auth-btn');
-  const authModal = document.getElementById('auth-modal');
-  const toggleAuthModeBtn = document.getElementById('toggle-auth-mode');
-  const authForm = document.getElementById('auth-form');
-
-  if (openAuthBtn) {
-    openAuthBtn.addEventListener('click', async () => {
-      if (supabaseClient) {
-        const { data: { session } } = await supabaseClient.auth.getSession();
-        if (session?.user) {
-          await supabaseClient.auth.signOut();
-          await updateAuthUI();
-          await fetchClosetItems();
-          return;
-        }
-      }
-      setAuthModalMode(false);
-      if (authModal) authModal.classList.remove('hidden');
-    });
-  }
-
-  if (closeAuthBtn && authModal) {
-    closeAuthBtn.addEventListener('click', () => {
-      authModal.classList.add('hidden');
-    });
-  }
-
-  if (toggleAuthModeBtn) {
-    toggleAuthModeBtn.addEventListener('click', () => {
-      setAuthModalMode(!isSignUpMode);
-    });
-  }
-
-  if (authForm) {
-    authForm.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const email = document.getElementById('auth-email').value.trim();
-      const password = document.getElementById('auth-password').value;
-      if (email && password) {
-        await handleAuthSubmit(email, password);
-      }
-    });
-  }
-
-  // 7. Supabase Auth Listener & Initial Data Load
-  if (supabaseClient) {
-    supabaseClient.auth.onAuthStateChange(async () => {
-      await updateAuthUI();
-      await fetchClosetItems();
-    });
-  }
-
-  updateAuthUI();
-  fetchClosetItems();
-  fetchLocalWeather();
-  
-// ==========================================
-// SERPAPI CLOTHING IMAGE SEARCH
+// 7. CLOTHING IMAGE SEARCH
 // ==========================================
 
 const clothingImageCache = new Map();
@@ -1707,11 +1412,24 @@ async function searchClothingImages(name, color) {
         .trim()
         .toLowerCase();
 
+    // Reuse results during the current session
+
     if (clothingImageCache.has(cacheKey)) {
         return clothingImageCache.get(cacheKey);
     }
 
+    if (!supabaseClient) {
+        return [];
+    }
+
     try {
+
+        const { data: { session } } =
+            await supabaseClient.auth.getSession();
+
+        if (!session?.user) {
+            return [];
+        }
 
         const { data, error } =
             await supabaseClient.functions.invoke(
@@ -1725,7 +1443,7 @@ async function searchClothingImages(name, color) {
             );
 
         if (error) {
-            console.error("Image search failed:", error);
+            console.error('Image search failed:', error);
             return [];
         }
 
@@ -1733,18 +1451,15 @@ async function searchClothingImages(name, color) {
 
         clothingImageCache.set(cacheKey, products);
 
-        console.log("Clothing images:", products);
-
         return products;
 
     } catch (error) {
 
-        console.error("Image search error:", error);
+        console.error('Clothing image error:', error);
 
         return [];
     }
 }
-
 // ==========================================
 // 8. CLOTHING IMAGE HANDLING
 // ==========================================
@@ -2006,5 +1721,216 @@ function createVisualPiece(item) {
 // Make the function available in the browser console
 
 window.searchClothingImages = searchClothingImages;
+
+// ==========================================
+// 9. EVENT LISTENERS & INITIALIZATION
+// ==========================================
+document.addEventListener('DOMContentLoaded', () => {
+  // 1. Bottom Navigation Tabs ("Style Check" / "My Closet" / "My Style")
+  const navButtons = document.querySelectorAll('.bottom-nav .nav-item');
+  const tabPanels = document.querySelectorAll('.tab-panel');
+
+  navButtons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const targetId = btn.dataset.target;
+      if (!targetId) return;
+
+      navButtons.forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+
+      tabPanels.forEach((panel) => {
+        panel.classList.toggle('active', panel.id === targetId);
+      });
+    });
+  });
+
+  // 2. Style Matcher Form (Tab 1)
+  const matcherForm = document.getElementById('matcher-form');
+  if (matcherForm) {
+    matcherForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const name = document.getElementById('buy-name').value.trim();
+      const category = document.getElementById('buy-category').value;
+      const color = document.getElementById('buy-color').value;
+      if (!name) return;
+
+      
+let photo;
+
+try {
+    photo = await readClothingPhoto('buy-image');
+} catch (error) {
+    alert(error.message);
+    return;
+}
+
+const targetItem = {
+    name,
+    category,
+    color,
+    image_url: photo,
+    image_source: photo ? 'Personal photo' : null
+};
+
+try {
+    const matchResult = generateOutfitMatches(targetItem);
+    await renderMatchResults(matchResult);
+} catch (error) {
+    console.error('Outfit generation failed:', error);
+    alert('Could not generate outfits. Please try again.');
+}
+
+    });
+  }
+
+  // 3. My Closet Drawer Toggle & Add Form (Tab 2)
+  const toggleAddBtn = document.getElementById('toggle-add-btn');
+  const cancelAddBtn = document.getElementById('cancel-add-btn');
+  const addClosetForm = document.getElementById('add-closet-form');
+
+  if (toggleAddBtn && addClosetForm) {
+    toggleAddBtn.addEventListener('click', () => {
+      addClosetForm.classList.toggle('hidden');
+    });
+  }
+
+  if (cancelAddBtn && addClosetForm) {
+    cancelAddBtn.addEventListener('click', () => {
+      addClosetForm.classList.add('hidden');
+      addClosetForm.reset();
+    });
+  }
+
+  if (addClosetForm) {
+    addClosetForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const name = document.getElementById('item-name').value.trim();
+      const category = document.getElementById('item-category').value;
+      const color = document.getElementById('item-color').value;
+      if (!name) return;
+
+      
+let photo;
+
+try {
+    photo = await readClothingPhoto('item-image');
+} catch (error) {
+    alert(error.message);
+    return;
+}
+
+const newItem = {
+    name,
+    category,
+    color,
+    image_url: photo,
+    image_source: photo ? 'Personal photo' : null
+};
+
+if (!photo) {
+
+    const reference = await getClothingImage(newItem);
+
+    newItem.image_url = reference.url;
+    newItem.image_source = reference.source;
+}
+
+if (!await createClosetItem(newItem)) return;
+
+      addClosetForm.reset();
+      addClosetForm.classList.add('hidden');
+    });
+  }
+
+  // 4. Closet Category Filter Chips (Tab 2)
+  const filterChips = document.querySelectorAll('#closet-filters .filter-chip');
+  filterChips.forEach((chip) => {
+    chip.addEventListener('click', () => {
+      filterChips.forEach((c) => c.classList.remove('active'));
+      chip.classList.add('active');
+      activeCategoryFilter = chip.dataset.filter || 'All';
+      renderCloset();
+    });
+  });
+
+  // 5. Style Persona Cards (Tab 3)
+  const activeStyleBadge = document.getElementById('active-style-badge');
+  const personaCards = document.querySelectorAll('#persona-list .persona-card');
+
+  if (activeStyleBadge) activeStyleBadge.textContent = selectedStyle;
+
+  personaCards.forEach((card) => {
+    card.classList.toggle('active', card.dataset.style === selectedStyle);
+
+    card.addEventListener('click', () => {
+      personaCards.forEach((c) => c.classList.remove('active'));
+      card.classList.add('active');
+      selectedStyle = card.dataset.style;
+      localStorage.setItem('user_style_persona', selectedStyle);
+      if (activeStyleBadge) activeStyleBadge.textContent = selectedStyle;
+    });
+  });
+
+  // 6. Auth Modal & Login/Sign Up Handlers
+  const openAuthBtn = document.getElementById('open-auth-btn');
+  const closeAuthBtn = document.getElementById('close-auth-btn');
+  const authModal = document.getElementById('auth-modal');
+  const toggleAuthModeBtn = document.getElementById('toggle-auth-mode');
+  const authForm = document.getElementById('auth-form');
+
+  if (openAuthBtn) {
+    openAuthBtn.addEventListener('click', async () => {
+      if (supabaseClient) {
+        const { data: { session } } = await supabaseClient.auth.getSession();
+        if (session?.user) {
+          await supabaseClient.auth.signOut();
+          await updateAuthUI();
+          await fetchClosetItems();
+          return;
+        }
+      }
+      setAuthModalMode(false);
+      if (authModal) authModal.classList.remove('hidden');
+    });
+  }
+
+  if (closeAuthBtn && authModal) {
+    closeAuthBtn.addEventListener('click', () => {
+      authModal.classList.add('hidden');
+    });
+  }
+
+  if (toggleAuthModeBtn) {
+    toggleAuthModeBtn.addEventListener('click', () => {
+      setAuthModalMode(!isSignUpMode);
+    });
+  }
+
+  if (authForm) {
+    authForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = document.getElementById('auth-email').value.trim();
+      const password = document.getElementById('auth-password').value;
+      if (email && password) {
+        await handleAuthSubmit(email, password);
+      }
+    });
+  }
+
+  // 7. Supabase Auth Listener & Initial Data Load
+  if (supabaseClient) {
+    supabaseClient.auth.onAuthStateChange((event) => {
+      if (event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
+        setTimeout(() => {
+          updateAuthUI();
+          fetchClosetItems();
+        }, 0);
+      }
+    });
+  }
+
+  updateAuthUI();
+  fetchClosetItems();
+  fetchLocalWeather();
 
 });
